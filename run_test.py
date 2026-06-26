@@ -58,6 +58,8 @@ parser.add_argument("--rewrite", action="store_true",
                     help="启用无害改写")
 parser.add_argument("--dynamic", action="store_true",
                     help="启用动态扰动")
+parser.add_argument("--beam", type=int, default=0,
+                    help="Beam Search 宽度 (0=关闭, 3-10=推荐, 默认: 0)")
 
 args = parser.parse_args()
 
@@ -70,9 +72,15 @@ from layer1.adders import NoiseInjector, HarmlessRewriter
 from layer1.core.payload import AttackPayload
 from layer1.core.attack_state import AttackState, RoundRecord
 from layer1.core.strategy import STRATEGY_REGISTRY
+from layer1.strategy_weights import apply_experiment_weights
 from layer1.utils.llm_client import LLMClient, ModelEndpoint, parse_model_arg
-from layer2 import PolicySampler, ResponseState, PerturbationVector
+from layer2 import PolicySampler, BeamPolicySampler, ResponseState, PerturbationVector
 from layer3 import JudgeRewardFunction, Auditor, Layer3Config, ReportGenerator, ReportData
+
+# ── 应用实验数据驱动的策略权重 ──
+_weight_report = apply_experiment_weights()
+print(f"[权重] active={_weight_report['active']}, deprecated={_weight_report['deprecated']}")
+print(f"[权重] deprecated: {_weight_report['deprecated_list']}")
 
 # ═══════════════════════════════════════════════════════════
 # Model setup
@@ -199,7 +207,15 @@ def refine_with_search_strategies(case, attack_state, applied_strategies: list) 
 
 def run_attack(instruction, safety_category, index) -> Dict[str, Any]:
     judge = JudgeRewardFunction(config)
-    policy_sampler = PolicySampler(reward=judge)
+    if args.beam > 0:
+        policy_sampler = BeamPolicySampler(
+            reward=judge,
+            beam_width=args.beam,
+            expansion_factor=3,
+            max_generations=3,
+        )
+    else:
+        policy_sampler = PolicySampler(reward=judge)
     policy_sampler.config.max_rounds_per_instruction = MAX_ROUNDS_PER_INSTRUCTION
     policy_sampler.config.strategy_exhaustion_ratio = 0.8
 
@@ -382,6 +398,7 @@ def main():
     print(f"  轮数上限 : {MAX_ROUNDS_PER_INSTRUCTION} 轮/指令")
     print(f"  策略上限 : {MAX_STRATEGIES} 个/轮")
     print(f"  Strong   : {'ON' if args.strong else 'OFF'}")
+    print(f"  Beam     : {args.beam} (width={args.beam})" if args.beam > 0 else "  Beam     : OFF (round-robin)")
     print(f"  Noise    : {'ON' if args.noise else 'OFF'}")
     print(f"  Rewrite  : {'ON' if args.rewrite else 'OFF'}")
     print(f"  Dynamic  : {'ON' if args.dynamic else 'OFF'}")

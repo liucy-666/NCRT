@@ -32,6 +32,8 @@ class Strategy(ABC):
     intensity: float
     scope: StrategyScope
     seed: Optional[int]
+    deprecated: bool
+    selection_weight: float
 
     def __init__(
         self,
@@ -41,6 +43,8 @@ class Strategy(ABC):
         scope: StrategyScope = StrategyScope.INSTRUCTION,
         seed: Optional[int] = None,
         axis: AttackAxis = AttackAxis.SURFACE,
+        deprecated: bool = False,
+        selection_weight: float = 1.0,
     ):
         self.name = name
         self.type = strategy_type
@@ -48,6 +52,8 @@ class Strategy(ABC):
         self.intensity = max(0.0, min(1.0, intensity))
         self.scope = scope
         self.seed = seed
+        self.deprecated = deprecated
+        self.selection_weight = max(0.0, min(1.0, selection_weight))
 
     @abstractmethod
     def apply(self, case: "TransformedCase") -> Tuple["TransformedCase", "StrategyTrace"]:
@@ -79,13 +85,54 @@ def get_strategy_axis(axis: AttackAxis) -> str:
 
 STRATEGY_REGISTRY: Dict[str, type] = {}
 
+# ── 策略元数据注册表（与注册解耦，可运行时动态调整）──
+STRATEGY_META: Dict[str, Dict[str, Any]] = {}
 
-def register_strategy(name: str, cls: type) -> None:
+
+def register_strategy(name: str, cls: type, deprecated: bool = False,
+                      selection_weight: float = 1.0) -> None:
     STRATEGY_REGISTRY[name] = cls
+    STRATEGY_META[name] = {
+        "deprecated": deprecated,
+        "selection_weight": max(0.0, min(1.0, selection_weight)),
+    }
+
+
+def set_strategy_weight(name: str, weight: float) -> None:
+    """运行时调整策略选择权重。0.0 = 几乎不会被选, 1.0 = 正常."""
+    if name in STRATEGY_META:
+        STRATEGY_META[name]["selection_weight"] = max(0.0, min(1.0, weight))
+
+
+def set_strategy_deprecated(name: str, deprecated: bool) -> None:
+    """标记策略为 deprecated。deprecated 策略只在探索轮次中有小概率被选中."""
+    if name in STRATEGY_META:
+        STRATEGY_META[name]["deprecated"] = deprecated
+
+
+def get_strategy_meta(name: str) -> Dict[str, Any]:
+    """获取策略元数据，若无记录则返回默认值."""
+    return STRATEGY_META.get(name, {"deprecated": False, "selection_weight": 1.0})
 
 
 def get_all_strategy_names() -> Set[str]:
     return set(STRATEGY_REGISTRY.keys())
+
+
+def get_active_strategy_names() -> Set[str]:
+    """返回所有非 deprecated 的策略名."""
+    return {
+        name for name in STRATEGY_REGISTRY
+        if not STRATEGY_META.get(name, {}).get("deprecated", False)
+    }
+
+
+def get_deprecated_strategy_names() -> Set[str]:
+    """返回所有 deprecated 的策略名."""
+    return {
+        name for name in STRATEGY_REGISTRY
+        if STRATEGY_META.get(name, {}).get("deprecated", False)
+    }
 
 
 def get_strategies_by_dimension(dimension: str) -> Dict[str, type]:

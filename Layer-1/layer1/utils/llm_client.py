@@ -35,7 +35,7 @@ class ModelEndpoint:
         if self.backend == "ollama":
             return ModelEndpoint(
                 model=self.model or "llama2-uncensored:7b",
-                base_url=self.base_url or "http://localhost:11434/v1",
+                base_url=self.base_url or "http://127.0.0.1:11434/v1",
                 api_key=self.api_key or "ollama",
                 backend="ollama",
             )
@@ -78,7 +78,7 @@ def parse_model_arg(value: str) -> ModelEndpoint:
         model = parts[1].strip() if len(parts) > 1 else "llama2-uncensored:7b"
         return ModelEndpoint(
             model=model,
-            base_url="http://localhost:11434/v1",
+            base_url="http://127.0.0.1:11434/v1",
             api_key="ollama",
             backend="ollama",
         )
@@ -137,7 +137,7 @@ class LLMClient:
         if cls._default_attack_endpoint is None:
             cls._default_attack_endpoint = ModelEndpoint(
                 model="llama2-uncensored:7b",
-                base_url="http://localhost:11434/v1",
+                base_url="http://127.0.0.1:11434/v1",
                 api_key="ollama",
                 backend="ollama",
             ).resolve()
@@ -181,10 +181,19 @@ class LLMClient:
         if self._client is None:
             try:
                 from openai import OpenAI
+                import httpx
+
+                # 本地 Ollama 不走系统代理（Windows 代理会导致连接挂起）
+                if self.backend == "ollama":
+                    http_client = httpx.Client(proxy=None, trust_env=False, timeout=self.timeout)
+                else:
+                    http_client = httpx.Client(timeout=self.timeout)
+
                 self._client = OpenAI(
                     base_url=self.base_url,
                     api_key=self.api_key,
                     timeout=self.timeout,
+                    http_client=http_client,
                 )
             except ImportError:
                 raise ImportError(

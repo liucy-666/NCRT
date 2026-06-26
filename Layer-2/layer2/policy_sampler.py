@@ -1,10 +1,13 @@
+import random as _random
 from typing import List, Optional, Tuple
 from layer1.core.test_case import TestCase, TransformedCase
 from layer1.core.strategy import (
     Strategy,
     StrategyType,
     STRATEGY_REGISTRY,
+    STRATEGY_META,
     get_strategy_dimension,
+    get_strategy_meta,
 )
 from layer2.core.types import (
     ExperienceRecord,
@@ -348,7 +351,7 @@ class PolicySampler:
     ) -> List[Strategy]:
         """
         B 层: 全局统计评分降级.
-        按维度取 top-1 直到达到 budget 上限.
+        按维度取 top-1 直到达到 budget 上限, 策略分数 × 权重后排序.
         维度优先级: representation > surface > search (结构化/编码策略优先于LLM搜索策略).
         """
         safety_category = test_case.metadata.get("safety_category", "")
@@ -367,19 +370,52 @@ class PolicySampler:
             safety_category=safety_category,
         )
 
+        # ── Weight boost: 按 selection_weight 重排 ──
+        def _weighted_score(s: Strategy) -> float:
+            meta = get_strategy_meta(s.name)
+            w = meta.get("selection_weight", 1.0)
+            # 基础分 = 1.0，权重加成
+            return w
+
+        selected = sorted(selected, key=_weighted_score, reverse=True)
         return selected[:budget]
 
     def _build_candidate_pool(self, allowed_axes: set) -> List[Strategy]:
+        """
+        构建候选策略池，尊重 selection_weight 和 deprecated 标记。
+
+        - deprecated 策略仅在探索轮次有概率被选中（exploration_rate）
+        - 非 deprecated 策略按 selection_weight 决定保留概率
+        - weight=1.0 的策略始终保留
+        """
         pool: List[Strategy] = []
         for name, cls in STRATEGY_REGISTRY.items():
             try:
                 dummy = cls.__new__(cls)
                 dummy.__init__()
                 axis_val = getattr(dummy, "axis", None)
-                if axis_val and axis_val.value in allowed_axes:
-                    instance = cls.__new__(cls)
-                    instance.__init__(intensity=0.5)
-                    pool.append(instance)
+                if not axis_val or axis_val.value not in allowed_axes:
+                    continue
+
+                meta = get_strategy_meta(name)
+                weight = meta.get("selection_weight", 1.0)
+                deprecated = meta.get("deprecated", False)
+
+                # ── Deprecated 策略: 仅在探索轮次中保留 ──
+                if deprecated:
+                    if _random.random() < self.config.exploration_rate * weight:
+                        pass  # 探索性保留
+                    else:
+                        continue  # 跳过
+
+                # ── 非 deprecated 策略: 按权重概率保留 ──
+                if not deprecated and weight < 1.0:
+                    if _random.random() > weight:
+                        continue
+
+                instance = cls.__new__(cls)
+                instance.__init__(intensity=0.5)
+                pool.append(instance)
             except Exception:
                 continue
         return pool

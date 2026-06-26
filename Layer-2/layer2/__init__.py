@@ -14,6 +14,7 @@ from layer2.core.rule_filter import RuleFilter
 from layer2.core.statistical_scorer import StatisticalScorer
 from layer2.core.rewards import StubRewardFunction, RewardFunction
 from layer2.policy_sampler import PolicySampler
+from layer2.beam_policy_sampler import BeamPolicySampler
 
 __all__ = [
     "Layer2Config",
@@ -32,6 +33,7 @@ __all__ = [
     "StubRewardFunction",
     "RewardFunction",
     "PolicySampler",
+    "BeamPolicySampler",
 ]
 
 

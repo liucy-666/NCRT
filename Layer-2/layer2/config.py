@@ -33,7 +33,7 @@ class Layer2Config:
 
     # ── Embedding ──
     embedding_model: str = "nomic-embed-text"
-    embedding_url: str = "http://localhost:11434/v1"
+    embedding_url: str = "http://127.0.0.1:11434/v1"
 
     # ── Response pattern 关键词 ──
     refusal_keywords: List[str] = field(default_factory=lambda: [

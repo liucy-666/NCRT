@@ -69,9 +69,15 @@ from layer1.adders import NoiseInjector, HarmlessRewriter, ReNeLLMComposer
 from layer1.core.payload import AttackPayload, AxisOrderViolationException
 from layer1.core.attack_state import AttackState, RoundRecord
 from layer1.core.strategy import STRATEGY_REGISTRY
+from layer1.strategy_weights import apply_experiment_weights
 from layer1.utils.llm_client import LLMClient, ModelEndpoint, parse_model_arg
 from layer2 import PolicySampler, ResponseState, PerturbationVector
 from layer3 import JudgeRewardFunction, Auditor, Layer3Config, ReportGenerator, ReportData
+
+# ── 应用实验数据驱动的策略权重 ──
+_weight_report = apply_experiment_weights()
+print(f"[权重] active={_weight_report['active']}, deprecated={_weight_report['deprecated']}")
+print(f"[权重] deprecated: {_weight_report['deprecated_list']}")
 
 attack_ep = parse_model_arg(args.attack_model)
 victim_ep = parse_model_arg(args.victim_model)

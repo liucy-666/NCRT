@@ -6,13 +6,19 @@ class EmbeddingClient:
     """
     Extracts text embeddings via ollama API (nomic-embed-text model).
     Falls back to TF-IDF if ollama is unreachable.
+
+    Built-in LRU cache: same text → cached embedding (saves 2-6s per duplicate).
     """
 
-    def __init__(self, config: Optional[Layer2Config] = None):
+    def __init__(self, config: Optional[Layer2Config] = None, cache_size: int = 2048):
         self.config = config or Layer2Config()
         self._tfidf_vectorizer = None
         self._tfidf_fitted = False
         self._available = None
+        self._cache: dict = {}
+        self._cache_size = max(1, cache_size)
+        self._cache_hits = 0
+        self._cache_misses = 0
 
     def is_available(self) -> bool:
         if self._available is not None:
@@ -41,10 +47,36 @@ class EmbeddingClient:
 
         text = text[:8192]
 
+        # ── Cache lookup ──
+        cache_key = hash(text)
+        if cache_key in self._cache:
+            self._cache_hits += 1
+            return self._cache[cache_key]
+
+        self._cache_misses += 1
+
         if self.is_available():
-            return self._ollama_embed(text)
+            result = self._ollama_embed(text)
         else:
-            return self._tfidf_embed(text)
+            result = self._tfidf_embed(text)
+
+        # ── Cache store (LRU eviction) ──
+        if len(self._cache) >= self._cache_size:
+            # Evict oldest entry (simple FIFO, good enough for instruction dedup)
+            oldest = next(iter(self._cache))
+            del self._cache[oldest]
+        self._cache[cache_key] = result
+        return result
+
+    @property
+    def cache_stats(self) -> dict:
+        total = self._cache_hits + self._cache_misses
+        return {
+            "size": len(self._cache),
+            "hits": self._cache_hits,
+            "misses": self._cache_misses,
+            "hit_rate": self._cache_hits / max(1, total),
+        }
 
     def _ollama_embed(self, text: str) -> List[float]:
         import requests
