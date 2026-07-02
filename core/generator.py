@@ -18,13 +18,16 @@ class Generator:
     def __init__(self, model: str = "llama2-uncensored:7b",
                  base_url: str = "http://127.0.0.1:11434/v1",
                  api_key: str = "ollama",
-                 backend: str = "ollama"):
-        self.model = model
+                 backend: str = "ollama",
+                 victim_model: str = "llama3.2:latest"):
+        self.model = model                   # 攻击模型
+        self.victim_model = victim_model     # 受害者模型
         self.base_url = base_url
         self.api_key = api_key
         self.backend = backend
         self._cache: dict = {}
         self._cache_hits = 0
+        self._victim_calls = 0
 
     def generate(self, prompt: str, system: str = "",
                  temperature: float = 0.8, max_tokens: int = 512) -> str:
@@ -42,6 +45,16 @@ class Generator:
         return result
 
     def _call(self, prompt: str, system: str, temperature: float, max_tokens: int) -> str:
+        """调用攻击模型."""
+        return self._call_model(self.model, prompt, system, temperature, max_tokens)
+
+    def call_victim(self, prompt: str, temperature: float = 0.7, max_tokens: int = 512) -> str:
+        """调用受害者模型."""
+        self._victim_calls += 1
+        return self._call_model(self.victim_model, prompt, "", temperature, max_tokens)
+
+    def _call_model(self, model: str, prompt: str, system: str,
+                    temperature: float, max_tokens: int) -> str:
         import requests, json
 
         messages = []
@@ -53,7 +66,7 @@ class Generator:
             resp = requests.post(
                 f"{self.base_url}/chat/completions",
                 json={
-                    "model": self.model,
+                    "model": model,
                     "messages": messages,
                     "temperature": temperature,
                     "max_tokens": max_tokens,

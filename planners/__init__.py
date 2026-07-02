@@ -13,14 +13,13 @@ from planners.crescendo import CrescendoPlanner
 from planners.pair import PAIRPlanner
 from planners.tap import TAPPlanner
 from planners.sema import SEMAPlanner
-from planners.controller import BudgetController
 
 PLANNERS = {
     "crescendo": CrescendoPlanner,
     "pair": PAIRPlanner,
     "tap": TAPPlanner,
     "sema": SEMAPlanner,
-    "budget": BudgetController,
+    "graph": None,  # 特殊: AttackScheduler, 在 run.py 中处理
 }
 
 

@@ -124,4 +124,4 @@ class PAIRPlanner(BasePlanner):
         )
 
     def _call_victim(self, prompt: str) -> str:
-        return self.generator._call(prompt, "", 0.7, 512)
+        return self.generator.call_victim(prompt)

@@ -118,5 +118,5 @@ Output ONLY the question, nothing else."""
                                        temperature=0.8, max_tokens=300)
 
     def _call_victim(self, prompt: str) -> str:
-        """调用受害者模型。子类可覆盖以支持不同后端。"""
-        return self.generator._call(prompt, "", 0.7, 512)
+        """调用受害者模型。"""
+        return self.generator.call_victim(prompt)

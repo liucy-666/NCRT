@@ -48,7 +48,7 @@ class AttackResult:
 class PlannerConfig:
     """Planner 通用配置"""
     max_rounds: int = 20
-    success_threshold: float = 0.7
+    success_threshold: float = 0.5
     failure_threshold: float = 0.3
     # Generator 参数
     attack_temperature: float = 0.8
