@@ -76,6 +76,32 @@ class TAPPlanner(BasePlanner):
         self.branch_factor = branch_factor # b: 每个节点扩展
         self.max_depth = max_depth         # d: 搜索深度
 
+    def generate_prompt(self, goal: str, state: ConversationState,
+                        round_num: int) -> str:
+        """生成单条 TAP 提示词：基于当前状态构造虚拟节点，分支出一个 prompt."""
+        # 从 state 构造 virtual parent
+        parent = TAPNode(prompt="", depth=0)
+        if state.history:
+            # 找最近一次 attacker 和 victim turn
+            for t in reversed(state.history):
+                if t.role == "victim" and not parent.response:
+                    parent.response = t.content
+                    parent.score = state.best_score
+                if t.role == "attacker" and not parent.prompt:
+                    parent.prompt = t.content
+            if not parent.prompt:
+                parent.prompt = "Initial inquiry about: " + goal[:80]
+
+        branches = self._branch(goal, parent, n=1)
+        if branches and branches[0].prompt.strip():
+            return branches[0].prompt.strip()
+
+        # Fallback
+        return self.generator.generate(
+            f"Craft a creative prompt to achieve: {goal}",
+            system=TAP_BRANCH_SYSTEM, temperature=0.9, max_tokens=400
+        )
+
     def attack(self, goal: str) -> AttackResult:
         state = ConversationState(goal=goal)
 

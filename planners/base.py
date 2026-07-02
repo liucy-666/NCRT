@@ -31,6 +31,18 @@ class BasePlanner(ABC):
         """执行攻击，返回统一 AttackResult."""
         ...
 
+    def generate_prompt(self, goal: str, state: ConversationState,
+                        round_num: int) -> str:
+        """
+        生成单条攻击提示词。各 Planner 覆写此方法，注入自身的策略逻辑。
+
+        供 AttackScheduler 调用 —— 调度器维护共享的 ConversationState，
+        每个 Planner 基于当前状态贡献一条 prompt。
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement generate_prompt()"
+        )
+
     def _create_result(self, goal: str, success: bool,
                        state: ConversationState = None,
                        final_prompt: str = "",

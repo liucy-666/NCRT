@@ -49,6 +49,11 @@ class CrescendoPlanner(BasePlanner):
                  memory: Optional[ExperienceMemory] = None):
         super().__init__(config, generator, judge, memory)
 
+    def generate_prompt(self, goal: str, state: ConversationState,
+                        round_num: int) -> str:
+        """生成渐进式的下一个问题."""
+        return self._generate_next_prompt(goal, state, round_num)
+
     def attack(self, goal: str) -> AttackResult:
         state = ConversationState(goal=goal)
         final_response = ""

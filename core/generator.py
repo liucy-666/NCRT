@@ -19,12 +19,21 @@ class Generator:
                  base_url: str = "http://127.0.0.1:11434/v1",
                  api_key: str = "ollama",
                  backend: str = "ollama",
-                 victim_model: str = "llama3.2:latest"):
+                 victim_model: str = "llama3.2:latest",
+                 attack_base_url: str = "",
+                 attack_api_key: str = "",
+                 victim_base_url: str = "",
+                 victim_api_key: str = ""):
         self.model = model                   # 攻击模型
         self.victim_model = victim_model     # 受害者模型
         self.base_url = base_url
         self.api_key = api_key
         self.backend = backend
+        # 分离端点：攻击模型和受害者模型可以用不同的 API
+        self.attack_base_url = attack_base_url or base_url
+        self.attack_api_key = attack_api_key or api_key
+        self.victim_base_url = victim_base_url or base_url
+        self.victim_api_key = victim_api_key or api_key
         self._cache: dict = {}
         self._cache_hits = 0
         self._victim_calls = 0
@@ -40,22 +49,28 @@ class Generator:
             return self._cache[key]
 
         result = self._call(prompt, system, temperature, max_tokens)
-        if result and len(result) > 10:
+        if result and len(result) > 10 and not result.startswith("[ERROR"):
             self._cache[key] = result
         return result
 
     def _call(self, prompt: str, system: str, temperature: float, max_tokens: int) -> str:
         """调用攻击模型."""
-        return self._call_model(self.model, prompt, system, temperature, max_tokens)
+        return self._call_model(self.model, prompt, system, temperature, max_tokens,
+                                base_url=self.attack_base_url, api_key=self.attack_api_key)
 
     def call_victim(self, prompt: str, temperature: float = 0.7, max_tokens: int = 512) -> str:
         """调用受害者模型."""
         self._victim_calls += 1
-        return self._call_model(self.victim_model, prompt, "", temperature, max_tokens)
+        return self._call_model(self.victim_model, prompt, "", temperature, max_tokens,
+                                base_url=self.victim_base_url, api_key=self.victim_api_key)
 
     def _call_model(self, model: str, prompt: str, system: str,
-                    temperature: float, max_tokens: int) -> str:
+                    temperature: float, max_tokens: int,
+                    base_url: str = "", api_key: str = "") -> str:
         import requests, json
+
+        url = base_url or self.base_url
+        key = api_key or self.api_key
 
         messages = []
         if system:
@@ -64,14 +79,14 @@ class Generator:
 
         try:
             resp = requests.post(
-                f"{self.base_url}/chat/completions",
+                f"{url}/chat/completions",
                 json={
                     "model": model,
                     "messages": messages,
                     "temperature": temperature,
                     "max_tokens": max_tokens,
                 },
-                headers={"Authorization": f"Bearer {self.api_key}"},
+                headers={"Authorization": f"Bearer {key}"},
                 timeout=120,
             )
             if resp.status_code == 200:

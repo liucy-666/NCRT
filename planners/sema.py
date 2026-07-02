@@ -71,6 +71,12 @@ class SEMAPlanner(BasePlanner):
                  memory: Optional[ExperienceMemory] = None):
         super().__init__(config, generator, judge, memory)
 
+    def generate_prompt(self, goal: str, state: ConversationState,
+                        round_num: int) -> str:
+        """生成单条 SEMA 提示词：反思 + 策略 + 生成 + 自检."""
+        result = self._planner_call(goal, state, round_num)
+        return result.get("prompt", "")
+
     def attack(self, goal: str) -> AttackResult:
         state = ConversationState(goal=goal)
         best_score = 0.0

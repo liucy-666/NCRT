@@ -46,6 +46,38 @@ class PAIRPlanner(BasePlanner):
                  memory: Optional[ExperienceMemory] = None):
         super().__init__(config, generator, judge, memory)
 
+    def generate_prompt(self, goal: str, state: ConversationState,
+                        round_num: int) -> str:
+        """生成单条 PAIR 提示词：首次用 initial，后续基于反馈 refine."""
+        if round_num == 1 or len(state.history) < 2:
+            return self._generate_initial(goal)
+
+        # 从 state 提取上一轮的 attacker prompt + judge 反馈
+        last_attacker = None
+        last_victim = None
+        for t in reversed(state.history):
+            if t.role == "attacker" and t.score is not None and last_attacker is None:
+                last_attacker = t
+            if t.role == "victim" and last_victim is None:
+                last_victim = t
+
+        if last_attacker is None or last_victim is None:
+            return self._generate_initial(goal, force_new=True)
+
+        # 如果上一轮快速拒绝 + 低分 → 换角度
+        if (self.judge.quick_refusal_check(last_victim.content)
+                and (last_attacker.score or 0) < 0.2):
+            return self._generate_initial(goal, force_new=True)
+
+        return self._refine(
+            goal,
+            last_prompt=last_attacker.content,
+            response=last_victim.content,
+            reason=last_attacker.judge_reason or "",
+            score=last_attacker.score or 0.0,
+            round_num=round_num,
+        )
+
     def attack(self, goal: str) -> AttackResult:
         state = ConversationState(goal=goal)
 
