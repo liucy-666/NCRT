@@ -79,9 +79,14 @@ def _run_attack_stream(session_id: str, params: dict):
                     max_llm_calls=params.get("rounds", 15) * 3,
                     success_threshold=params.get("threshold", 0.5),
                 )
-                scheduler = AttackScheduler(config=sc, generator=generator, judge=judge)
-                # 给 scheduler 加 hook 来推送每轮结果
-                _patch_scheduler_stream(scheduler, emit)
+                def on_round(rnum, pname, prompt, resp, score, reason):
+                    emit("round", {
+                        "round": rnum, "planner": pname,
+                        "prompt": prompt[:200], "response": resp[:200],
+                        "score": score, "reason": reason[:200],
+                    })
+                scheduler = AttackScheduler(config=sc, generator=generator, judge=judge,
+                                           on_round=on_round)
                 result = scheduler.attack(goal)
                 emit("result", _result_to_dict(result, "graph", goal))
             else:
@@ -231,24 +236,6 @@ def _patch_planner_stream(planner, emit):
     planner.judge.evaluate = hooked_evaluate
 
 
-def _patch_scheduler_stream(scheduler, emit):
-    """同 _patch_planner_stream，但给 Scheduler 用."""
-    original_evaluate = scheduler.judge.evaluate
-
-    def hooked_evaluate(goal, prompt, response):
-        score, reason = original_evaluate(goal, prompt, response)
-        emit("round", {
-            "prompt": prompt[:200],
-            "response": response[:200],
-            "score": score,
-            "reason": reason[:200],
-            "planner": "graph",
-        })
-        return score, reason
-
-    scheduler.judge.evaluate = hooked_evaluate
-
-
 def _cleanup_session(session_id: str):
     if session_id in _active_sessions:
         del _active_sessions[session_id]
@@ -261,6 +248,11 @@ def _cleanup_session(session_id: str):
 @app.route("/")
 def index():
     return send_from_directory("static", "index.html")
+
+
+@app.route("/api/health")
+def api_health():
+    return jsonify({"status": "ok"})
 
 
 @app.route("/api/attack", methods=["POST"])

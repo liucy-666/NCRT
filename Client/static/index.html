@@ -345,12 +345,16 @@ async function startAttack() {
     return;
   }
 
+  // ── 断开旧连接，清空旧数据 ──
+  if (eventSource) { eventSource.close(); eventSource = null; }
+  rounds = []; finalResult = null; compareResults = null; logEntries.length = 0; sessionId = null;
+
   // UI state
   document.getElementById("btn-start").disabled = true;
   document.getElementById("btn-stop").disabled = false;
   document.getElementById("status-dot").className = "dot running";
   document.getElementById("status-text").textContent = "Starting...";
-  document.getElementById("content").innerHTML = "";
+  document.getElementById("content").innerHTML = '<div class="empty"><div class="icon">&#9203;</div><div>Attack started, waiting for results...</div></div>';
 
   try {
     const resp = await fetch("/api/attack", {

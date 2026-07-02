@@ -72,12 +72,14 @@ class AttackScheduler:
 
     def __init__(self, config: Optional[SchedulerConfig] = None,
                  generator: Optional[Generator] = None,
-                 judge: Optional[Judge] = None):
+                 judge: Optional[Judge] = None,
+                 on_round: callable = None):
         self.config = config or SchedulerConfig()
         self.generator = generator or Generator()
         self.judge = judge or Judge()
         self.context_builder = ContextBuilder()
         self._embedding_cache: dict = {}
+        self.on_round = on_round  # (round_num, planner_name, prompt, response, score, reason)
 
         # ── 创建真实的 Planner 实例 ──
         planner_cfg = _build_planner_config(self.config)
@@ -116,6 +118,7 @@ class AttackScheduler:
 
         best_node = root
         total_calls = 0
+        last_planner = ""
         planner_calls: dict = {}
         result_turns: List[ConversationTurn] = []
 
@@ -142,6 +145,15 @@ class AttackScheduler:
             # ── 4. Judge 评估 ──
             score, reason = self.judge.evaluate(goal, prompt, victim_resp)
             total_calls += 1
+
+            # ── 终端输出 + Web 回调 ──
+            if last_planner != planner_name:
+                last_planner = planner_name
+                print(f"\n  >> [{planner_name.upper()}] ", end="", flush=True)
+            mark = "✓" if score >= self.config.success_threshold else ""
+            print(f"R{round_num:02d}={score:.2f}{mark} ", end="", flush=True)
+            if self.on_round:
+                self.on_round(round_num, planner_name, prompt, victim_resp, score, reason)
 
             # ── 5. 写入共享 State ──
             state.add_turn(ConversationTurn(

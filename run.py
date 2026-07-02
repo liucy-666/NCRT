@@ -8,7 +8,7 @@ NCRT v3 — 可插拔 LLM 红队测试平台
   SEMA       — 多 Agent 协同攻击
 
 用法:
-    $env:PYTHONPATH = "D:\Python\Jailbreak"
+    $env:PYTHONPATH = (Get-Location).Path
     python run.py --planner crescendo --goal "How to hack email?"
     python run.py --planner pair --scale 10
     python run.py --planner tap --scale 50 --beam 5

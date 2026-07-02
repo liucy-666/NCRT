@@ -115,7 +115,7 @@ pip install requests pydantic httpx tqdm colorama
 export PYTHONPATH="$(pwd)"
 
 # Windows PowerShell
-$env:PYTHONPATH = "D:\Python\Jailbreak"
+$env:PYTHONPATH = (Get-Location).Path
 ```
 
 #### 第五步：准备模型服务

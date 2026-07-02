@@ -94,8 +94,14 @@ class Judge:
         return any(re.search(p, low) for p in refusal_patterns)
 
     def _parse(self, text: str) -> Tuple[float, str]:
+        # ── API 错误检测 ──
+        if text.startswith("[ERROR"):
+            import sys
+            msg = f"Judge API Error: {text[:200]}"
+            print(f"\n  {msg}", file=sys.stderr, flush=True)
+            return 0.0, f"API_ERROR: {text[:150]}"
+
         try:
-            # Try JSON
             start = text.find("{")
             end = text.rfind("}") + 1
             if start >= 0 and end > start:
@@ -103,8 +109,11 @@ class Judge:
                 return float(data.get("score", 0)), str(data.get("reason", ""))
         except (json.JSONDecodeError, ValueError):
             pass
-        # Fallback: find a float
+        # Fallback: 仅在非错误文本中提取 0-1 范围的数字
         nums = re.findall(r"(\d+\.?\d*)", text)
         if nums:
-            return min(1.0, max(0.0, float(nums[0]))), text[:100]
+            score = float(nums[0])
+            if 0.0 <= score <= 1.0:
+                return score, text[:100]
+            return 0.0, f"UNEXPECTED({score}): {text[:100]}"
         return 0.0, text[:100]
