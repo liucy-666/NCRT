@@ -130,7 +130,26 @@ ollama pull nomic-embed-text         # Embedding 模型（经验记忆检索）
 
 ### 3.3 基础使用
 
-#### 单目标攻击
+#### 桌面应用（推荐）
+
+如果你不想每次手写命令行，启动桌面应用即可：
+
+```bash
+# 方式一：双击（Windows）
+Client/start.bat
+
+# 方式二：命令行
+python Client/launcher.py
+```
+
+会打开一个原生桌面窗口，左侧面板配置模型和 Planner，右侧实时显示攻击进度和结果。三层的模型 API 端点均可独立配置，Preset 下拉框一键切换 Ollama / DeepSeek。
+
+架构：
+- 前端：纯 HTML/CSS/JS 单页面，深色主题
+- 后端：Flask + SSE 流式推送，复用你已有的 `core/`、`planners/`、`scheduler/` 代码（一行不改）
+- 桌面壳：`pywebview` 把 HTML 装进原生窗口，像 VS Code 一样的独立软件
+
+#### 命令行 — 单目标攻击
 
 指定一个攻击目标，观察单个 Planner 的完整越狱过程：
 
@@ -332,7 +351,13 @@ config = PlannerConfig(
 
 ```
 Jailbreak/
-├── run.py                        # CLI 入口（347 行）
+├── run.py                        # CLI 入口
+├── Client/                       # 桌面应用
+│   ├── launcher.py               # 桌面启动器（Flask + pywebview）
+│   ├── start.bat                 # 双击启动脚本
+│   ├── server.py                 # Flask 后端 + SSE 流式推送
+│   └── static/
+│       └── index.html            # 单页前端（深色主题）
 ├── core/                         # 基础设施层
 │   ├── __init__.py               # 统一导出所有核心类
 │   ├── types.py                  # 数据类型：Outcome, ConversationTurn, AttackResult, PlannerConfig
@@ -533,7 +558,7 @@ PLANNERS["my_planner"] = MyPlanner
 |---|---|
 | v1 | 单一攻击策略，基础评估 |
 | v2 | 引入多 Planner 架构，统一接口 |
-| **v3**（当前） | 真实 Planner 调度器（非 prompt 换皮）+ 攻击/受害者 API 分离端点 + ExperienceMemory + TAP 轻量剪枝 + SEMA 单智能体重构 |
+| **v3**（当前） | 真实 Planner 调度器 + 攻击/受害者 API 分离端点 + 桌面应用（pywebview + Flask + SSE）+ SEMA 单智能体重构 |
 
 ---
 
