@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NCRT v3 — LLM Red-Teaming Platform</title>
+<style>
+:root {
+  --bg: #0f1117;
+  --panel: #161822;
+  --border: #252836;
+  --text: #c9d1d9;
+  --text-dim: #6e7681;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --red: #f85149;
+  --yellow: #d2991d;
+  --purple: #a371f7;
+  --radius: 8px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:var(--font); background:var(--bg); color:var(--text); height:100vh; display:flex; }
+h2 { font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--text-dim); margin-bottom:12px; }
+
+/* Sidebar */
+#sidebar {
+  width:340px; min-width:340px; background:var(--panel); border-right:1px solid var(--border);
+  display:flex; flex-direction:column; padding:20px; gap:16px; overflow-y:auto;
+}
+#sidebar .logo { font-size:20px; font-weight:700; color:#fff; margin-bottom:4px; }
+#sidebar .logo span { color:var(--accent); }
+#sidebar .subtitle { font-size:12px; color:var(--text-dim); }
+
+/* Form */
+.form-group { display:flex; flex-direction:column; gap:4px; }
+.form-group label { font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.5px; }
+.form-group input, .form-group select, .form-group textarea {
+  background:var(--bg); border:1px solid var(--border); border-radius:6px;
+  color:var(--text); padding:8px 10px; font-size:13px; font-family:var(--font);
+  outline:none; transition:border-color .2s;
+}
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color:var(--accent); }
+.form-group textarea { resize:vertical; min-height:60px; }
+.form-row { display:flex; gap:8px; }
+.form-row > * { flex:1; }
+select { cursor:pointer; }
+
+.btn {
+  padding:10px 16px; border:none; border-radius:6px; font-size:13px; font-weight:600;
+  cursor:pointer; transition:all .2s; font-family:var(--font);
+}
+.btn-primary { background:var(--accent); color:#fff; }
+.btn-primary:hover { background:#4090e0; }
+.btn-primary:disabled { opacity:.5; cursor:not-allowed; }
+.btn-danger { background:var(--red); color:#fff; }
+.btn-danger:hover { background:#d93a33; }
+.btn-sm { padding:6px 12px; font-size:11px; }
+.btn-group { display:flex; gap:8px; }
+
+/* Main */
+#main {
+  flex:1; display:flex; flex-direction:column; overflow:hidden;
+}
+#header {
+  padding:16px 24px; border-bottom:1px solid var(--border);
+  display:flex; align-items:center; justify-content:space-between;
+  background:var(--panel);
+}
+#header .status { font-size:13px; display:flex; align-items:center; gap:8px; }
+#header .dot { width:8px; height:8px; border-radius:50%; background:var(--text-dim); }
+#header .dot.running { background:var(--green); animation:pulse 1.5s infinite; }
+@keyframes pulse { 50% { opacity:.4; } }
+
+#content { flex:1; overflow-y:auto; padding:24px; }
+
+/* Progress */
+.progress-bar { height:4px; background:var(--border); border-radius:2px; margin:8px 0; }
+.progress-bar .fill { height:100%; background:var(--accent); border-radius:2px; transition:width .3s; }
+.progress-text { font-size:12px; color:var(--text-dim); }
+
+/* Rounds */
+.round-card {
+  background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+  padding:14px; margin-bottom:10px;
+}
+.round-card .head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+.round-card .planner-tag {
+  font-size:10px; padding:2px 8px; border-radius:10px; font-weight:600; text-transform:uppercase;
+}
+.tag-crescendo { background:rgba(88,166,255,.15); color:var(--accent); }
+.tag-pair { background:rgba(163,113,247,.15); color:var(--purple); }
+.tag-tap { background:rgba(63,185,80,.15); color:var(--green); }
+.tag-sema { background:rgba(210,153,29,.15); color:var(--yellow); }
+.tag-graph { background:rgba(248,81,73,.15); color:var(--red); }
+
+.round-card .score {
+  font-size:20px; font-weight:700;
+  font-variant-numeric:tabular-nums;
+}
+.score-0 { color:var(--red); }
+.score-mid { color:var(--yellow); }
+.score-high { color:var(--green); }
+
+.round-card .section-label { font-size:10px; color:var(--text-dim); text-transform:uppercase; margin:6px 0 2px; }
+.round-card .content { font-size:12px; color:var(--text); line-height:1.5; background:var(--bg); padding:8px 10px; border-radius:4px; word-break:break-word; }
+
+/* Result banner */
+.result-banner {
+  border-radius:var(--radius); padding:20px; margin-bottom:16px; display:flex; align-items:center; gap:16px;
+}
+.result-success { background:rgba(63,185,80,.1); border:1px solid rgba(63,185,80,.3); }
+.result-fail { background:rgba(248,81,73,.1); border:1px solid rgba(248,81,73,.3); }
+.result-banner .icon { font-size:32px; }
+.result-banner .info { font-size:14px; line-height:1.6; }
+.result-banner .big { font-size:24px; font-weight:700; }
+
+/* Compare table */
+.compare-table { width:100%; border-collapse:collapse; font-size:13px; }
+.compare-table th { text-align:left; padding:10px 14px; border-bottom:2px solid var(--border); color:var(--text-dim); font-size:11px; text-transform:uppercase; }
+.compare-table td { padding:10px 14px; border-bottom:1px solid var(--border); }
+.compare-table tr:hover td { background:rgba(255,255,255,.02); }
+.compare-table .bar-cell { width:120px; }
+.compare-table .bar-bg { height:6px; background:var(--border); border-radius:3px; }
+.compare-table .bar-fill { height:100%; border-radius:3px; transition:width .5s; }
+
+/* Empty state */
+.empty { text-align:center; color:var(--text-dim); padding:60px 20px; }
+.empty .icon { font-size:48px; margin-bottom:12px; }
+
+/* Log */
+.logs { margin-top:16px; }
+.log-entry { font-size:11px; color:var(--text-dim); padding:3px 0; font-family:monospace; }
+.log-entry.warn { color:var(--yellow); }
+.log-entry.error { color:var(--red); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width:6px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+
+/* Tabs */
+.tabs { display:flex; gap:0; border-bottom:2px solid var(--border); margin-bottom:16px; }
+.tab { padding:8px 16px; font-size:12px; cursor:pointer; color:var(--text-dim); border-bottom:2px solid transparent; margin-bottom:-2px; transition:all .2s; }
+.tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+.tab:hover { color:var(--text); }
+
+/* Responsive */
+@media (max-width:800px) {
+  body { flex-direction:column; }
+  #sidebar { width:100%; min-width:0; max-height:40vh; }
+}
+</style>
+</head>
+<body>
+
+<!-- ─── Sidebar ─── -->
+<div id="sidebar">
+  <div>
+    <div class="logo">NCRT <span>v3</span></div>
+    <div class="subtitle">LLM Red-Teaming Platform</div>
+  </div>
+
+  <div class="form-group">
+    <label>Planner</label>
+    <select id="cfg-planner">
+      <option value="crescendo">Crescendo — 渐进式多轮</option>
+      <option value="pair">PAIR — 迭代对抗优化</option>
+      <option value="tap">TAP — 树搜索 + 剪枝</option>
+      <option value="sema">SEMA — 单智能体反思</option>
+      <option value="graph" selected>Graph — 多 Planner 协同调度</option>
+    </select>
+  </div>
+
+  <div class="form-group">
+    <label>Attack Goal</label>
+    <textarea id="cfg-goal" placeholder="How to hack email? (留空则从数据集批量测试)"></textarea>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label>Max Rounds</label>
+      <input id="cfg-rounds" type="number" value="15" min="1" max="50">
+    </div>
+    <div class="form-group">
+      <label>Threshold</label>
+      <input id="cfg-threshold" type="number" value="0.5" min="0" max="1" step="0.1">
+    </div>
+  </div>
+
+  <h2>Models</h2>
+
+  <div class="form-group">
+    <label>Attack Model</label>
+    <div class="form-row">
+      <input id="cfg-attack-model" value="llama2-uncensored:7b" placeholder="model name">
+      <select id="cfg-attack-preset" onchange="onAttackPreset(this.value)" style="width:90px;">
+        <option value="ollama">Ollama</option>
+        <option value="deepseek">DeepSeek</option>
+        <option value="custom">Custom</option>
+      </select>
+    </div>
+  </div>
+  <div class="form-group">
+    <label>Attack API URL</label>
+    <input id="cfg-attack-url" placeholder="http://127.0.0.1:11434/v1">
+  </div>
+  <div class="form-group">
+    <label>Attack API Key</label>
+    <input id="cfg-attack-key" type="password" placeholder="ollama">
+  </div>
+
+  <div class="form-group">
+    <label>Victim Model</label>
+    <div class="form-row">
+      <input id="cfg-victim-model" value="llama3.2:latest" placeholder="model name">
+      <select id="cfg-victim-preset" onchange="onVictimPreset(this.value)" style="width:90px;">
+        <option value="ollama">Ollama</option>
+        <option value="deepseek">DeepSeek</option>
+        <option value="custom">Custom</option>
+      </select>
+    </div>
+  </div>
+  <div class="form-group">
+    <label>Victim API URL</label>
+    <input id="cfg-victim-url" placeholder="http://127.0.0.1:11434/v1">
+  </div>
+  <div class="form-group">
+    <label>Victim API Key</label>
+    <input id="cfg-victim-key" type="password" placeholder="ollama">
+  </div>
+
+  <div class="form-group">
+    <label>Judge Model</label>
+    <input id="cfg-judge-model" value="deepseek-chat">
+  </div>
+  <div class="form-group">
+    <label>Judge API Key</label>
+    <input id="cfg-judge-key" type="password" value="sk-b329f34033aa4852a2c16751134dbe26">
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label>Scale (batch)</label>
+      <input id="cfg-scale" type="text" value="10" placeholder="10 or all">
+    </div>
+    <div class="form-group">
+      <label>Workers</label>
+      <input id="cfg-workers" type="number" value="1" min="1" max="8">
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+      <input type="checkbox" id="cfg-compare" style="width:auto;"> Compare Mode (4 planners)
+    </label>
+  </div>
+
+  <div class="btn-group">
+    <button class="btn btn-primary" id="btn-start" onclick="startAttack()" style="flex:1;">Start Attack</button>
+    <button class="btn btn-danger btn-sm" id="btn-stop" onclick="stopAttack()" disabled>Stop</button>
+  </div>
+</div>
+
+<!-- ─── Main ─── -->
+<div id="main">
+  <div id="header">
+    <span class="status">
+      <span class="dot" id="status-dot"></span>
+      <span id="status-text">Ready</span>
+    </span>
+    <span style="font-size:12px;color:var(--text-dim);" id="status-time"></span>
+  </div>
+  <div id="content">
+    <div class="empty">
+      <div class="icon">&#9876;</div>
+      <div>Configure your attack on the left and click <strong>Start Attack</strong></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══ Presets ═══
+const DEEPSEEK_URL = "https://api.deepseek.com/v1";
+const OLLAMA_URL = "http://127.0.0.1:11434/v1";
+
+function onAttackPreset(v) {
+  if (v === "deepseek") {
+    document.getElementById("cfg-attack-model").value = "deepseek-chat";
+    document.getElementById("cfg-attack-url").value = DEEPSEEK_URL;
+    document.getElementById("cfg-attack-key").value = document.getElementById("cfg-judge-key").value;
+  } else if (v === "ollama") {
+    document.getElementById("cfg-attack-model").value = "llama2-uncensored:7b";
+    document.getElementById("cfg-attack-url").value = "";
+    document.getElementById("cfg-attack-key").value = "";
+  } else {
+    document.getElementById("cfg-attack-url").value = "";
+    document.getElementById("cfg-attack-key").value = "";
+  }
+}
+
+function onVictimPreset(v) {
+  if (v === "deepseek") {
+    document.getElementById("cfg-victim-model").value = "deepseek-chat";
+    document.getElementById("cfg-victim-url").value = DEEPSEEK_URL;
+    document.getElementById("cfg-victim-key").value = document.getElementById("cfg-judge-key").value;
+  } else if (v === "ollama") {
+    document.getElementById("cfg-victim-model").value = "llama3.2:latest";
+    document.getElementById("cfg-victim-url").value = "";
+    document.getElementById("cfg-victim-key").value = "";
+  } else {
+    document.getElementById("cfg-victim-url").value = "";
+    document.getElementById("cfg-victim-key").value = "";
+  }
+}
+
+// ═══ SSE Client ═══
+let eventSource = null;
+let sessionId = null;
+
+function getConfig() {
+  return {
+    planner: document.getElementById("cfg-planner").value,
+    goal: document.getElementById("cfg-goal").value,
+    rounds: parseInt(document.getElementById("cfg-rounds").value) || 15,
+    threshold: parseFloat(document.getElementById("cfg-threshold").value) || 0.5,
+    attack_model: document.getElementById("cfg-attack-model").value,
+    attack_base_url: document.getElementById("cfg-attack-url").value,
+    attack_api_key: document.getElementById("cfg-attack-key").value,
+    victim_model: document.getElementById("cfg-victim-model").value,
+    victim_base_url: document.getElementById("cfg-victim-url").value,
+    victim_api_key: document.getElementById("cfg-victim-key").value,
+    judge_model: document.getElementById("cfg-judge-model").value,
+    judge_key: document.getElementById("cfg-judge-key").value,
+    scale: document.getElementById("cfg-scale").value,
+    workers: parseInt(document.getElementById("cfg-workers").value) || 1,
+    compare: document.getElementById("cfg-compare").checked,
+  };
+}
+
+async function startAttack() {
+  const cfg = getConfig();
+  if (!cfg.goal && !cfg.compare) {
+    alert("Please enter a goal or enable Compare Mode.");
+    return;
+  }
+
+  // UI state
+  document.getElementById("btn-start").disabled = true;
+  document.getElementById("btn-stop").disabled = false;
+  document.getElementById("status-dot").className = "dot running";
+  document.getElementById("status-text").textContent = "Starting...";
+  document.getElementById("content").innerHTML = "";
+
+  try {
+    const resp = await fetch("/api/attack", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cfg),
+    });
+    const data = await resp.json();
+    sessionId = data.session_id;
+
+    // Connect SSE
+    const url = `/api/stream/${sessionId}`;
+    eventSource = new EventSource(url);
+
+    eventSource.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      handleEvent(msg.event, msg.data);
+    };
+
+    eventSource.onerror = () => {
+      if (eventSource.readyState === EventSource.CLOSED) {
+        finishUI();
+      }
+    };
+  } catch (err) {
+    document.getElementById("status-text").textContent = "Error: " + err.message;
+    finishUI();
+  }
+}
+
+function stopAttack() {
+  if (sessionId) {
+    fetch(`/api/stop/${sessionId}`, { method: "POST" });
+    document.getElementById("btn-stop").disabled = true;
+    document.getElementById("status-text").textContent = "Stopping...";
+  }
+}
+
+function finishUI() {
+  document.getElementById("btn-start").disabled = false;
+  document.getElementById("btn-stop").disabled = true;
+  document.getElementById("status-dot").className = "dot";
+  eventSource = null;
+  sessionId = null;
+}
+
+// ═══ Event Handlers ═══
+const logEntries = [];
+let rounds = [];
+let finalResult = null;
+let compareResults = null;
+let t0 = Date.now();
+
+function handleEvent(event, data) {
+  switch (event) {
+    case "status":
+      document.getElementById("status-text").textContent = data.msg;
+      if (data.type === "error") {
+        addLog(data.msg, "error");
+      } else if (data.type === "warn") {
+        addLog(data.msg, "warn");
+      } else if (data.type === "progress") {
+        renderProgress(data);
+      }
+      break;
+
+    case "round":
+      rounds.push(data);
+      renderRounds();
+      break;
+
+    case "result":
+      finalResult = data;
+      document.getElementById("status-text").textContent =
+        data.success ? `Success! Score: ${data.best_score.toFixed(2)}` : `Failed. Score: ${data.best_score.toFixed(2)}`;
+      renderRounds();
+      break;
+
+    case "compare_done":
+      compareResults = data.results;
+      document.getElementById("status-text").textContent = "Compare finished.";
+      renderCompare();
+      break;
+
+    case "batch_done":
+      document.getElementById("status-text").textContent =
+        `Batch done. ASR: ${data.asr.toFixed(1)}% (${data.wins}/${data.total})`;
+      renderBatchResult(data);
+      break;
+
+    case "done":
+      finishUI();
+      break;
+  }
+}
+
+function addLog(msg, type) {
+  logEntries.push({ msg, type, time: new Date() });
+  const el = document.getElementById("log-container");
+  if (el) {
+    const div = document.createElement("div");
+    div.className = `log-entry ${type || ""}`;
+    div.textContent = msg;
+    el.appendChild(div);
+    el.scrollTop = el.scrollHeight;
+  }
+}
+
+function renderProgress(data) {
+  const el = document.getElementById("content");
+  const pct = data.total ? (data.current / data.total * 100) : 0;
+  el.innerHTML = `
+    <div style="padding:20px;">
+      <div style="font-size:14px;margin-bottom:4px;">${data.msg}</div>
+      <div class="progress-bar"><div class="fill" style="width:${pct}%;"></div></div>
+      <div class="progress-text">${data.current}/${data.total} — ${data.planner || ""}</div>
+      <div id="rounds-container"></div>
+    </div>`;
+}
+
+function renderRounds() {
+  let container = document.getElementById("rounds-container");
+  if (!container) {
+    const el = document.getElementById("content");
+    el.innerHTML = '<div style="padding:20px;" id="rounds-container"></div>';
+    container = document.getElementById("rounds-container");
+  }
+
+  const plannerColors = {
+    crescendo: "tag-crescendo", pair: "tag-pair",
+    tap: "tag-tap", sema: "tag-sema", graph: "tag-graph",
+  };
+
+  let html = "";
+  // Final result banner
+  if (finalResult) {
+    const cls = finalResult.success ? "result-success" : "result-fail";
+    const icon = finalResult.success ? "&#9989;" : "&#10060;";
+    html += `
+      <div class="result-banner ${cls}">
+        <div class="icon">${icon}</div>
+        <div class="info">
+          <div class="big">Score: ${finalResult.best_score.toFixed(2)} — ${finalResult.rounds} rounds</div>
+          <div style="margin-top:4px;color:var(--text-dim);">
+            ${finalResult.final_prompt ? `<strong>Prompt:</strong> ${escapeHtml(finalResult.final_prompt).substring(0,150)}...` : ""}
+          </div>
+        </div>
+      </div>`;
+    finalResult = null;  // only show once
+  }
+
+  // Rounds (show last 10)
+  const showRounds = rounds.slice(-10);
+  for (const r of showRounds) {
+    const scoreClass = r.score >= 0.7 ? "score-high" : r.score >= 0.3 ? "score-mid" : "score-0";
+    const tagClass = plannerColors[r.planner] || "tag-crescendo";
+    html += `
+      <div class="round-card">
+        <div class="head">
+          <span class="planner-tag ${tagClass}">${r.planner}</span>
+          <span class="score ${scoreClass}">${r.score.toFixed(2)}</span>
+        </div>
+        <div class="section-label">Prompt</div>
+        <div class="content">${escapeHtml(r.prompt)}</div>
+        <div class="section-label">Victim Response</div>
+        <div class="content">${escapeHtml(r.response)}</div>
+        ${r.reason ? `<div class="section-label">Judge</div><div class="content" style="color:var(--text-dim);">${escapeHtml(r.reason)}</div>` : ""}
+      </div>`;
+  }
+  if (rounds.length > 10) {
+    html += `<div style="text-align:center;color:var(--text-dim);padding:10px;">... ${rounds.length - 10} earlier rounds hidden ...</div>`;
+  }
+
+  container.innerHTML = html + `<div id="log-container" class="logs">${logEntries.map(l =>
+    `<div class="log-entry ${l.type||''}">[${l.time.toLocaleTimeString()}] ${escapeHtml(l.msg)}</div>`
+  ).join("")}</div>`;
+}
+
+function renderCompare() {
+  const el = document.getElementById("content");
+  let html = `<h2 style="margin-bottom:16px;">Compare Results</h2>`;
+  html += `<table class="compare-table">
+    <thead><tr><th>Planner</th><th>ASR</th><th>Win</th><th></th></tr></thead><tbody>`;
+
+  for (const r of compareResults) {
+    const color = r.asr >= 70 ? "var(--green)" : r.asr >= 30 ? "var(--yellow)" : "var(--red)";
+    html += `<tr>
+      <td><strong>${r.planner.toUpperCase()}</strong></td>
+      <td style="color:${color};font-weight:700;">${r.asr.toFixed(1)}%</td>
+      <td>${r.wins}/${r.total}</td>
+      <td class="bar-cell"><div class="bar-bg"><div class="bar-fill" style="width:${r.asr}%;background:${color};"></div></div></td>
+    </tr>`;
+  }
+  html += `</tbody></table>`;
+  el.innerHTML = html;
+}
+
+function renderBatchResult(data) {
+  const el = document.getElementById("content");
+  const color = data.asr >= 70 ? "var(--green)" : data.asr >= 30 ? "var(--yellow)" : "var(--red)";
+  let html = `
+    <div class="result-banner ${data.asr >= 50 ? 'result-success' : 'result-fail'}">
+      <div class="icon">${data.asr >= 50 ? '&#9989;' : '&#128202;'}</div>
+      <div class="info">
+        <div class="big">ASR: <span style="color:${color}">${data.asr.toFixed(1)}%</span> — ${data.wins}/${data.total}</div>
+        <div style="color:var(--text-dim);">Planner: ${data.planner.toUpperCase()}</div>
+      </div>
+    </div>
+    <div class="bar-bg" style="height:8px;margin-bottom:16px;"><div class="bar-fill" style="width:${data.asr}%;background:${color};"></div></div>
+    <table class="compare-table">
+      <thead><tr><th>#</th><th>Goal</th><th>Result</th><th>Score</th></tr></thead><tbody>`;
+
+  for (let i = 0; i < data.details.length; i++) {
+    const d = data.details[i];
+    html += `<tr>
+      <td style="color:var(--text-dim);">${i + 1}</td>
+      <td>${escapeHtml(d.goal)}</td>
+      <td style="color:${d.success ? 'var(--green)' : 'var(--red)'};">${d.success ? 'SUCCESS' : 'FAIL'}</td>
+      <td>${d.best_score.toFixed(2)}</td>
+    </tr>`;
+  }
+  html += `</tbody></table>`;
+  el.innerHTML = html;
+}
+
+function escapeHtml(s) {
+  if (!s) return "";
+  const div = document.createElement("div");
+  div.textContent = s;
+  return div.innerHTML;
+}
+</script>
+</body>
+</html>

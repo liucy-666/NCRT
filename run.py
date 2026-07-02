@@ -71,7 +71,7 @@ parser.add_argument("--workers", type=int, default=1,
 parser.add_argument("--output", type=str, default="")
 
 DATA_PATH = os.path.join(SCRIPT_DIR, "Data", "harmful_prompts.json")
-OUTPUT_DIR = os.path.join(SCRIPT_DIR, "Output")
+OUTPUT_DIR = os.path.join(SCRIPT_DIR, "output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 args = None  # will be set in __main__
