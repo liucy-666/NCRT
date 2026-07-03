@@ -29,7 +29,7 @@ _active_sessions: dict = {}  # session_id -> {"thread": ..., "stop": bool, "queu
 
 
 def _load_dataset(limit: int = None) -> list:
-    path = os.path.join(PROJECT_DIR, "Data", "harmful_prompts.json")
+    path = os.path.join(PROJECT_DIR, "data", "harmful_prompts.json")
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     items = [p for p in data if p.get("source") == "forbidden_question_set"]

@@ -5,7 +5,7 @@ NCRT v3 — Planner 模块
   CrescendoPlanner — 渐进式多轮越狱
   PAIRPlanner      — 迭代对抗攻击
   TAPPlanner       — 树搜索攻击
-  SEMAPlanner      — 多 Agent 协同攻击
+  SEMAPlanner      — 单智能体反思攻击
 """
 
 from planners.base import BasePlanner

@@ -5,7 +5,7 @@ NCRT v3 — 可插拔 LLM 红队测试平台
   Crescendo  — 渐进式多轮越狱
   PAIR       — 迭代对抗攻击
   TAP        — 树搜索攻击
-  SEMA       — 多 Agent 协同攻击
+  SEMA       — 单智能体反思攻击
 
 用法:
     $env:PYTHONPATH = (Get-Location).Path
@@ -70,7 +70,7 @@ parser.add_argument("--workers", type=int, default=1,
                     help="并行线程数 (1=串行, 3-5=推荐)")
 parser.add_argument("--output", type=str, default="")
 
-DATA_PATH = os.path.join(SCRIPT_DIR, "Data", "harmful_prompts.json")
+DATA_PATH = os.path.join(SCRIPT_DIR, "data", "harmful_prompts.json")
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 

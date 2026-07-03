@@ -61,10 +61,10 @@ Attack Model（攻击者）      Victim Model（受害者）      Judge Model（
 
 | Planner | 策略名称 | 核心思路 | 每轮 LLM 调用 | 论文来源 |
 |---|---|---|---|---|
-| **Crescendo** | 渐进式多轮越狱 | 用一系列看似无害的问题逐步靠近目标 | 2 + Judge | *Crescendo: Multi-turn Jailbreak via Gradual Escalation* |
-| **PAIR** | 迭代对抗优化 | 生成 → 评估 → 反馈 → 优化，循环改进 | 2 + Judge | *PAIR — Chao et al., 2023* |
-| **TAP** | 树搜索 + 剪枝 | Beam Search：分支 b 个候选 → 轻量剪枝到 w → 完整攻击 | 1 + w×(1+Judge) | *TAP — Mehrotra et al., 2023* |
-| **SEMA** | 单智能体反思 | 一次 LLM 调用完成反思 + 策略 + 生成 + 自检 | 1 + Victim + Judge | 自研（替代原 5-Agent 架构） |
+| **Crescendo** | 渐进式多轮越狱 | 用一系列看似无害的问题逐步靠近目标 | 3（生成 + 受害者 + 裁判） | *Crescendo: Multi-turn Jailbreak via Gradual Escalation* |
+| **PAIR** | 迭代对抗优化 | 生成 → 评估 → 反馈 → 优化，循环改进 | 3（生成 + 受害者 + 裁判） | *PAIR — Chao et al., 2023* |
+| **TAP** | 树搜索 + 剪枝 | Beam Search：分支 b 个候选 → 轻量剪枝到 w → 完整攻击 | 1 + 2w（分支 + w×受害者 + w×裁判） | *TAP — Mehrotra et al., 2023* |
+| **SEMA** | 单智能体反思 | 一次 LLM 调用完成反思 + 策略 + 生成 + 自检 | 3（反思生成 + 受害者 + 裁判） | 自研（替代原 5-Agent 架构） |
 
 ---
 
@@ -93,13 +93,13 @@ cd Jailbreak
 #### 第二步：创建虚拟环境
 
 ```bash
-python -m venv .venv
+python -m venv .jailbreak
 
 # Linux / macOS
-source .venv/bin/activate
+source .jailbreak/bin/activate
 
 # Windows PowerShell
-.venv\Scripts\activate
+.jailbreak\Scripts\Activate.ps1
 ```
 
 #### 第三步：安装依赖
@@ -187,15 +187,15 @@ python run.py --compare --scale 20 --workers 4
 ======================================================================
   COMPARISON (n=20)
 ======================================================================
-  Planner         ASR     Win  AvgScore       Time
-  ----------  --------  -----  ---------  ----------
-  crescendo     35.0%    7/20     0.482       120s
-  pair          45.0%    9/20     0.521       145s
-  tap           55.0%   11/20     0.563       198s
-  sema          40.0%    8/20     0.503       110s
+  Planner         ASR    Win  AvgScore       Time
+  --------------- -------- ------ --------- ----------
+  crescendo       35.0%    7/20     0.482        120s
+  pair            45.0%    9/20     0.521        145s
+  tap             55.0%   11/20     0.563        198s
+  sema            40.0%    8/20     0.503        110s
 ```
 
-结果保存至 `Output/comparison_results.json`。
+结果保存至 `output/comparison_results.json`。
 
 #### Graph Scheduler 模式
 
@@ -241,7 +241,7 @@ python run.py --planner graph --goal "How to hack email?" \
 | `--seed` | `int` | `42` | 随机种子，保证结果可复现 |
 | `--compare` | `flag` | `false` | 对比模式：在同一批目标上运行全部四种 Planner |
 | `--workers` | `int` | `1` | 并行线程数（推荐 3~5，串行 = 1） |
-| `--output` | `str` | `""` | 自定义输出路径（默认 `Output/{planner}_results.json`） |
+| `--output` | `str` | `""` | 自定义输出路径（默认 `output/{planner}_results.json`） |
 
 ---
 
@@ -366,20 +366,20 @@ Jailbreak/
 │   └── memory.py                 # ConversationState 对话状态 + ExperienceMemory 跨目标经验
 ├── planners/                     # 攻击策略层
 │   ├── __init__.py               # Planner 注册表 + get_planner() 工厂函数
-│   ├── base.py                   # 抽象 BasePlanner 基类（52 行）
-│   ├── crescendo.py              # Crescendo：渐进式多轮越狱（123 行）
-│   ├── pair.py                   # PAIR：迭代对抗优化（128 行）
-│   ├── tap.py                    # TAP：树搜索 + 轻量剪枝（258 行）
-│   └── sema.py                   # SEMA：单智能体反思攻击（208 行）
+│   ├── base.py                   # 抽象 BasePlanner 基类
+│   ├── crescendo.py              # Crescendo：渐进式多轮越狱
+│   ├── pair.py                   # PAIR：迭代对抗优化
+│   ├── tap.py                    # TAP：树搜索 + 轻量剪枝
+│   └── sema.py                   # SEMA：单智能体反思攻击
 ├── scheduler/                    # 协同编排层
 │   ├── __init__.py               # 调度模块导出
 │   ├── graph.py                  # AttackGraph 有向图状态机 + AttackNode / AttackEdge
 │   ├── context_builder.py        # 动态 LLM 上下文重建（极简：goal + 上一轮）
-│   └── scheduler.py              # AttackScheduler：多 Planner 协同编排器（303 行）
+│   └── scheduler.py              # AttackScheduler：多 Planner 协同编排器
 ├── data/
 │   ├── harmful_prompts.json      # 有害指令数据集（forbidden_question_set）
 │   └── harmless_prompts.json     # 无害提示词参考集
-└── Output/                       # 结果输出目录
+└── output/                       # 结果输出目录
 ```
 
 ### 5.2 各模块详解
@@ -397,18 +397,19 @@ Jailbreak/
 
 所有 Planner 继承 `BasePlanner`，实现 `attack(goal) → AttackResult` 接口。
 
-| 文件 | 类 | 行数 | 核心算法 |
-|---|---|---|---|
-| `crescendo.py` | `CrescendoPlanner` | 123 | 渐进式多轮：从不直接提问，用看似无害的问题逐步逼近 |
-| `pair.py` | `PAIRPlanner` | 128 | 迭代对抗：生成 → 拒绝？换角度 → 部分成功？深挖 |
-| `tap.py` | `TAPPlanner` | 258 | Beam Search：Branch(b) → Lightweight Prune → Top(w) → Attack |
-| `sema.py` | `SEMAPlanner` | 208 | 单智能体：一次调用内完成反思 + 策略 + 生成 + 自检 |
+| 文件 | 类 | 核心算法 |
+|---|---|---|
+| `crescendo.py` | `CrescendoPlanner` | 渐进式多轮：从不直接提问，用看似无害的问题逐步逼近 |
+| `pair.py` | `PAIRPlanner` | 迭代对抗：生成 → 拒绝？换角度 → 部分成功？深挖 |
+| `tap.py` | `TAPPlanner` | Beam Search：Branch(b) → Lightweight Prune → Top(w) → Attack |
+| `sema.py` | `SEMAPlanner` | 单智能体：一次调用内完成反思 + 策略 + 生成 + 自检 |
 
 **TAP 的轻量剪枝规则**（不调用 LLM，不调用 Victim）：
 
 | 规则 | 条件 | 加分 |
 |---|---|---|
 | 长度合理 | 80~600 字符 | +0.3 |
+| 长度尚可 | 40~1000 字符（未命中上档） | +0.15 |
 | 策略多样性 | 与兄弟节点词汇重叠度低 | +0.3 |
 | 目标相关性 | 包含 goal 关键词 | +0.2 |
 | 无触发词 | 不含 hack/steal/illegal 等 | +0.2 |
