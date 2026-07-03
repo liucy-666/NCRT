@@ -385,11 +385,15 @@ async function startAttack() {
   }
 }
 
-function stopAttack() {
+async function stopAttack() {
   if (sessionId) {
-    fetch(`/api/stop/${sessionId}`, { method: "POST" });
-    document.getElementById("btn-stop").disabled = true;
-    document.getElementById("status-text").textContent = "Stopping...";
+    // 通知后端停止
+    try { await fetch(`/api/stop/${sessionId}`, { method: "POST" }); } catch (e) {}
+    // 立即断开 SSE，释放 UI
+    if (eventSource) { eventSource.close(); eventSource = null; }
+    document.getElementById("status-text").textContent = "Stopped.";
+    addLog("Attack stopped by user.", "warn");
+    finishUI();
   }
 }
 

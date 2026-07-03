@@ -28,6 +28,11 @@ app = Flask(__name__, static_folder="static", static_url_path="")
 _active_sessions: dict = {}  # session_id -> {"thread": ..., "stop": bool, "queue": Queue}
 
 
+class _StopAttack(Exception):
+    """Raised inside a planner loop when the user requests stop."""
+    pass
+
+
 def _load_dataset(limit: int = None) -> list:
     path = os.path.join(PROJECT_DIR, "data", "harmful_prompts.json")
     with open(path, "r", encoding="utf-8") as f:
@@ -80,6 +85,8 @@ def _run_attack_stream(session_id: str, params: dict):
                     success_threshold=params.get("threshold", 0.5),
                 )
                 def on_round(rnum, pname, prompt, resp, score, reason):
+                    if _active_sessions.get(session_id, {}).get("stop"):
+                        raise _StopAttack()
                     emit("round", {
                         "round": rnum, "planner": pname,
                         "prompt": prompt[:200], "response": resp[:200],
@@ -87,14 +94,20 @@ def _run_attack_stream(session_id: str, params: dict):
                     })
                 scheduler = AttackScheduler(config=sc, generator=generator, judge=judge,
                                            on_round=on_round)
-                result = scheduler.attack(goal)
-                emit("result", _result_to_dict(result, "graph", goal))
+                try:
+                    result = scheduler.attack(goal)
+                    emit("result", _result_to_dict(result, "graph", goal))
+                except _StopAttack:
+                    emit("status", {"msg": "Stopped by user.", "type": "warn"})
             else:
                 planner = get_planner(planner_name, config=config,
                                       generator=generator, judge=judge)
-                _patch_planner_stream(planner, emit)
-                result = planner.attack(goal)
-                emit("result", _result_to_dict(result, planner_name, goal))
+                _patch_planner_stream(planner, emit, session_id)
+                try:
+                    result = planner.attack(goal)
+                    emit("result", _result_to_dict(result, planner_name, goal))
+                except _StopAttack:
+                    emit("status", {"msg": "Stopped by user.", "type": "warn"})
 
         # ── 对比模式 ──
         elif params.get("compare"):
@@ -218,11 +231,13 @@ def _result_to_dict(result: AttackResult, planner_name: str, goal: str) -> dict:
     }
 
 
-def _patch_planner_stream(planner, emit):
-    """给 Planner 打补丁，每轮评估后推送事件."""
+def _patch_planner_stream(planner, emit, session_id: str = ""):
+    """给 Planner 打补丁，每轮评估后推送事件；同时检查 stop 标志."""
     original_judge_evaluate = planner.judge.evaluate
 
     def hooked_evaluate(goal, prompt, response):
+        if session_id and _active_sessions.get(session_id, {}).get("stop"):
+            raise _StopAttack()
         score, reason = original_judge_evaluate(goal, prompt, response)
         emit("round", {
             "prompt": prompt[:200],
