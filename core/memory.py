@@ -21,6 +21,7 @@ class ConversationState:
     best_score: float = 0.0
     victim_attitude: str = "unknown"  # hostile / guarded / neutral / cooperative
     distance_to_goal: float = 1.0     # 估算距目标的距离
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     def add_turn(self, turn: ConversationTurn) -> None:
         self.history.append(turn)

@@ -1,6 +1,8 @@
 .jailbreak/
 .claude/
+.venv/
 *.pyc
 *.pyo
 .env
 Output/
+*.pdf

@@ -46,7 +46,7 @@ class SchedulerConfig:
 
     # Planner 轮询顺序
     planner_roster: List[str] = field(
-        default_factory=lambda: ["crescendo", "pair", "tap", "sema"]
+        default_factory=lambda: ["crescendo", "pair", "tap", "sema", "icrt", "safe2harm"]
     )
 
 
@@ -87,6 +87,8 @@ class AttackScheduler:
         from planners.pair import PAIRPlanner
         from planners.tap import TAPPlanner
         from planners.sema import SEMAPlanner
+        from planners.icrt import ICRTPlanner
+        from planners.safe2harm import Safe2HarmPlanner
 
         self.planners: dict = {
             "crescendo": CrescendoPlanner(
@@ -96,6 +98,10 @@ class AttackScheduler:
             "tap": TAPPlanner(
                 config=planner_cfg, generator=self.generator, judge=self.judge),
             "sema": SEMAPlanner(
+                config=planner_cfg, generator=self.generator, judge=self.judge),
+            "icrt": ICRTPlanner(
+                config=planner_cfg, generator=self.generator, judge=self.judge),
+            "safe2harm": Safe2HarmPlanner(
                 config=planner_cfg, generator=self.generator, judge=self.judge),
         }
 
