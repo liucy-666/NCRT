@@ -10,7 +10,7 @@ NCRT v3 — Planner 模块
   Safe2HarmPlanner  — 语义同构攻击
 """
 
-from planners.base import BasePlanner
+from planners.base import BasePlanner, TurnPlan
 from planners.crescendo import CrescendoPlanner
 from planners.pair import PAIRPlanner
 from planners.tap import TAPPlanner

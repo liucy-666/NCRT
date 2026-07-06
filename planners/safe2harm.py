@@ -24,7 +24,7 @@ LLM 的安全机制按"语义场景"拦截——如果先把有害问题映射�
 import json
 import re
 from typing import List, Optional, Dict
-from planners.base import BasePlanner
+from planners.base import BasePlanner, TurnPlan
 from core.types import AttackResult, ConversationTurn, PlannerConfig
 from core.generator import Generator
 from core.judge import Judge
@@ -106,6 +106,47 @@ class Safe2HarmPlanner(BasePlanner):
         safe_q = self._rewrite_to_safe(goal)
         state.metadata["safe2harm_safe_q"] = safe_q
         return safe_q
+
+    def plan_turn(self, goal: str, state: ConversationState,
+                  round_num: int, internal_budget: int = 2) -> TurnPlan:
+        """Safe2Harm 微轮次: Stage 1 (安全改写) + Stage 2 (主题映射提取)。"""
+        internal_calls = 0
+        rejected_attempt = state.metadata.get("safe2harm_rejected_attempt", 0)
+
+        if rejected_attempt > 0:
+            safe_q = self._rewrite_to_safe(goal)
+            internal_calls += 1
+            state.metadata["safe2harm_safe_q"] = safe_q
+            mapping = self._extract_mapping(goal, safe_q)
+            internal_calls += 1
+            state.metadata["safe2harm_mapping"] = mapping
+            return TurnPlan(
+                prompt=safe_q,
+                expected_response=self._predict_response(safe_q, goal),
+                strategy="safe2harm_retry",
+                internal_calls=internal_calls,
+                metadata={"mapping": mapping, "rejected_attempt": rejected_attempt},
+            )
+
+        safe_q = state.metadata.get("safe2harm_safe_q")
+        if safe_q is None:
+            safe_q = self._rewrite_to_safe(goal)
+            internal_calls += 1
+            state.metadata["safe2harm_safe_q"] = safe_q
+
+        mapping = state.metadata.get("safe2harm_mapping")
+        if mapping is None:
+            mapping = self._extract_mapping(goal, safe_q)
+            internal_calls += 1
+            state.metadata["safe2harm_mapping"] = mapping
+
+        return TurnPlan(
+            prompt=safe_q,
+            expected_response=self._predict_response(safe_q, goal),
+            strategy="safe2harm_semantic_mapping",
+            internal_calls=internal_calls,
+            metadata={"mapping": mapping},
+        )
 
     def attack(self, goal: str) -> AttackResult:
         state = ConversationState(goal=goal)
