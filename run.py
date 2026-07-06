@@ -1,11 +1,13 @@
 r"""
 NCRT v3 — 可插拔 LLM 红队测试平台
 
-四种 Planner 统一接口，可直接互换对比:
+六种 Planner 统一接口，可直接互换对比:
   Crescendo  — 渐进式多轮越狱
   PAIR       — 迭代对抗攻击
   TAP        — 树搜索攻击
   SEMA       — 单智能体反思攻击
+  ICRT       — 认知分解攻击 (ICML 2025)
+  Safe2Harm  — 语义同构攻击
 
 用法:
     $env:PYTHONPATH = (Get-Location).Path
