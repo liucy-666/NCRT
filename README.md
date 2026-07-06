@@ -21,11 +21,8 @@ NCRT  面向 **LLM 安全研究人员**和**模型开发者**，帮助他们：
 
 ## 2. 核心设计（Core Design）
 
-### 2.1 项目名称
 
-**NCRT v3** — Neural Concurrent Red-Teaming, version 3。
-
-### 2.2 三层解耦架构
+### 2.1 三层解耦架构
 
 ```
 Attack Model（攻击者）      Victim Model（受害者）      Judge Model（裁判）
@@ -35,7 +32,7 @@ Attack Model（攻击者）      Victim Model（受害者）      Judge Model（
 
 每一层的模型和 API 端点均可独立配置。
 
-### 2.3 六种攻击策略一览
+### 2.2 六种攻击策略一览
 
 | Planner | 策略名称 | 核心思路 | 论文来源 |
 |---|---|---|---|
@@ -48,7 +45,7 @@ Attack Model（攻击者）      Victim Model（受害者）      Judge Model（
 
 所有 Planner 遵循统一接口 `attack(goal) → AttackResult`，可互换对比。
 
-### 2.4 多智能体调度器（Graph Scheduler）
+### 2.3 多智能体调度器（Graph Scheduler）
 
 维护**六个真实 Planner 实例**，通过 `plan_turn()` 接口让每个 Planner 在自身算法（TAP 的分支搜索、PAIR 的迭代优化、Crescendo 的渐进升级等）内运行一个微轮次。调度器基于 **alignment（预期-实际回答相似度）** 驱动切换。
 
