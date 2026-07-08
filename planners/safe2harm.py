@@ -98,52 +98,28 @@ class Safe2HarmPlanner(BasePlanner):
 
     def generate_prompt(self, goal: str, state: ConversationState,
                         round_num: int) -> str:
-        """生成 Safe2Harm 的安全等价 prompt."""
-        # 如果之前已经 rewrite 过，直接返回缓存的安全问题
-        if state.metadata.get("safe2harm_safe_q"):
-            return state.metadata["safe2harm_safe_q"]
-
+        """每次生成不同的安全等价 prompt (Scheduler 每轮调用)."""
         safe_q = self._rewrite_to_safe(goal)
         state.metadata["safe2harm_safe_q"] = safe_q
         return safe_q
 
     def plan_turn(self, goal: str, state: ConversationState,
                   round_num: int, internal_budget: int = 2) -> TurnPlan:
-        """Safe2Harm 微轮次: Stage 1 (安全改写) + Stage 2 (主题映射提取)。"""
+        """Safe2Harm 微轮次: 每轮生成新的安全改写 + 主题映射."""
         internal_calls = 0
-        rejected_attempt = state.metadata.get("safe2harm_rejected_attempt", 0)
 
-        if rejected_attempt > 0:
-            safe_q = self._rewrite_to_safe(goal)
-            internal_calls += 1
-            state.metadata["safe2harm_safe_q"] = safe_q
-            mapping = self._extract_mapping(goal, safe_q)
-            internal_calls += 1
-            state.metadata["safe2harm_mapping"] = mapping
-            return TurnPlan(
-                prompt=safe_q,
-                expected_response=self._predict_response(safe_q, goal),
-                strategy="safe2harm_retry",
-                internal_calls=internal_calls,
-                metadata={"mapping": mapping, "rejected_attempt": rejected_attempt},
-            )
+        safe_q = self._rewrite_to_safe(goal)
+        internal_calls += 1
+        state.metadata["safe2harm_safe_q"] = safe_q
 
-        safe_q = state.metadata.get("safe2harm_safe_q")
-        if safe_q is None:
-            safe_q = self._rewrite_to_safe(goal)
-            internal_calls += 1
-            state.metadata["safe2harm_safe_q"] = safe_q
-
-        mapping = state.metadata.get("safe2harm_mapping")
-        if mapping is None:
-            mapping = self._extract_mapping(goal, safe_q)
-            internal_calls += 1
-            state.metadata["safe2harm_mapping"] = mapping
+        mapping = self._extract_mapping(goal, safe_q)
+        internal_calls += 1
+        state.metadata["safe2harm_mapping"] = mapping
 
         return TurnPlan(
             prompt=safe_q,
             expected_response=self._predict_response(safe_q, goal),
-            strategy="safe2harm_semantic_mapping",
+            strategy=f"safe2harm_r{round_num}",
             internal_calls=internal_calls,
             metadata={"mapping": mapping},
         )

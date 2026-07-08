@@ -236,7 +236,7 @@ class AttackScheduler:
             # ── 4. Judge 评估 (双轴: score + progress) ──
             score, reason = self.judge.evaluate(goal, prompt, victim_resp)
             progress = self.judge.last_progress
-            total_victim_calls += 1
+            # Judge 不计入轮次预算, 只算 Victim 调用
             recent_scores.append(score)
 
             # ── 5. ★ 先更新 best_node（成功检查前！否则 best_score 永远是 0）──
