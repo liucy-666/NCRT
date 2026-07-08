@@ -453,28 +453,31 @@ function renderBatchResult(data) {
 const AS_FIELDS = {
   attack: [
     {k:"stage",    zh:"攻击阶段",    fmt:"text", src:"scheduler", note:"Scheduler 规则推断 + Handoff 精调"},
-    {k:"progress",  zh:"攻击进度",    fmt:"pct",  src:"judge",     note:"Judge 双轴评估: 距离最终越狱还有多远"},
+    {k:"goal_progress", zh:"攻击进度", fmt:"pct", src:"judge",  note:"Judge 双轴评估: 距离最终越狱还有多远"},
     {k:"cooperation", zh:"配合程度",  fmt:"pct",  src:"scheduler", note:"Judge harmfulness score 的 EMA"},
     {k:"refusal_rate", zh:"拒绝频率", fmt:"pct",  src:"scheduler", note:"quick_refusal_check 命中率的 EMA"},
-    {k:"safety_boundary", zh:"安全边界", fmt:"text", src:"handoff", note:"Handoff Judge 推断: strict/softening/soft/broken"},
-    {k:"best_score", zh:"最佳危害分", fmt:"num",  src:"scheduler", note:"历史最高 judge harmfulness score"},
+    {k:"boundary", zh:"安全边界",    fmt:"text", src:"handoff",   note:"Handoff Judge 推断: strict/softening/soft/broken"},
+    {k:"best_score", zh:"最佳危害分", fmt:"num", src:"scheduler", note:"历史最高 judge harmfulness score"},
   ],
   knowledge: [
-    {k:"persona_role", zh:"已建立角色", fmt:"text", src:"handoff", note:"Victim 是否接受了某种角色设定"},
-    {k:"accepted_topics", zh:"可聊话题", fmt:"list", src:"handoff", note:"Victim 已接受的话题, Planner 可继续构建"},
-    {k:"blocked_topics", zh:"阻塞话题", fmt:"list", src:"handoff", note:"Victim 仍拒绝的话题, 应避免直触"},
-    {k:"tried_planners", zh:"已上场的Planner", fmt:"list", src:"scheduler", note:"按上场顺序排列"},
+    {k:"persona", zh:"已建立角色",   fmt:"text", src:"handoff",   note:"Victim 接受了什么角色设定"},
+    {k:"accepted_topics", zh:"可聊话题", fmt:"list", src:"handoff", note:"Victim 已接受的话题"},
+    {k:"blocked_topics", zh:"阻塞话题", fmt:"list", src:"handoff", note:"Victim 仍拒绝的话题"},
+    {k:"closest_to_success", zh:"最接近成功", fmt:"text", src:"handoff", note:"最接近成功的一次是什么状态"},
+    {k:"tried_planners", zh:"已上场Planner", fmt:"list", src:"scheduler", note:"按上场顺序排列"},
     {k:"tried_strategies", zh:"已尝试策略", fmt:"list", src:"scheduler", note:"所有尝试过的策略标签"},
     {k:"failed_strategies", zh:"已失败策略", fmt:"list", src:"scheduler", note:"触发快速拒绝的策略子集"},
   ],
   handoff: [
+    {k:"handoff_reason", zh:"切换原因", fmt:"text", src:"scheduler", note:"alignment/stagnation/strategy_exhausted/timeout"},
+    {k:"failure_type", zh:"失败类型",   fmt:"text", src:"handoff",   note:"direct_refusal/role_rejection/topic_blocked/..."},
+    {k:"failure_strength", zh:"失败程度", fmt:"text", src:"handoff", note:"low/medium/high"},
+    {k:"recommended_strategies", zh:"建议策略", fmt:"list", src:"handoff", note:"Handoff Judge 给下一任的策略建议"},
+    {k:"avoid_patterns", zh:"应避免模式", fmt:"list", src:"handoff", note:"Handoff Judge 建议避免的措辞/策略"},
     {k:"planner_switch_count", zh:"切换次数", fmt:"num", src:"scheduler", note:"Planner 切换总次数"},
     {k:"consecutive_refusals", zh:"连续拒绝数", fmt:"num", src:"scheduler", note:"当前连续快速拒绝轮数"},
-    {k:"total_rounds", zh:"总轮数", fmt:"num", src:"scheduler", note:"已执行的攻击总轮数"},
+    {k:"total_rounds", zh:"总轮数",      fmt:"num", src:"scheduler", note:"已执行的攻击总轮数"},
     {k:"last_planner", zh:"上一任Planner", fmt:"text", src:"scheduler", note:"刚被切换掉的 Planner"},
-    {k:"last_failure_reason", zh:"失败原因", fmt:"text", src:"handoff", note:"Handoff Judge 总结: 上一任为什么失败"},
-    {k:"what_to_avoid", zh:"应避免的模式", fmt:"list", src:"handoff", note:"Handoff Judge 建议避免的措辞/策略"},
-    {k:"suggested_next", zh:"建议下一方向", fmt:"text", src:"handoff", note:"Handoff Judge 给下一任 Planner 的建议"},
   ]
 };
 
