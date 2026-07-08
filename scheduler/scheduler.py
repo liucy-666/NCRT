@@ -237,7 +237,20 @@ class AttackScheduler:
             progress = self.judge.last_progress
             total_victim_calls += 1
 
-            # ── 5. 成功检查 ──
+            # ── 5. ★ 先更新 best_node（成功检查前！否则 best_score 永远是 0）──
+            # 创建临时节点用于追踪
+            embedding = self.embedder.embed(victim_resp)
+            summary = f"Prompt: {prompt[:150]}... | Response: {victim_resp[:150]}... | Score: {score:.2f}"
+            new_node = graph.expand(
+                parent_id=current_node.node_id, planner=planner_name,
+                conversation_summary=summary, victim_response=victim_resp,
+                judge_score=score, judge_reason=reason, prompt=prompt,
+                cost=2, embedding=embedding,
+            )
+            if score > best_node.judge_score:
+                best_node = new_node
+
+            # ── 6. 成功检查 ──
             if score >= self.config.success_threshold:
                 self._emit_round(round_num, planner_name, prompt, victim_resp,
                                  score, reason, attack_state)
@@ -278,17 +291,7 @@ class AttackScheduler:
             ))
             state.metadata["attack_state"] = attack_state.to_dict()
 
-            # ── 10. 写入图 ──
-            embedding = self.embedder.embed(victim_resp)
-            summary = f"Prompt: {prompt[:150]}... | Response: {victim_resp[:150]}... | Score: {score:.2f}"
-            new_node = graph.expand(
-                parent_id=current_node.node_id, planner=planner_name,
-                conversation_summary=summary, victim_response=victim_resp,
-                judge_score=score, judge_reason=reason, prompt=prompt,
-                cost=2, embedding=embedding,
-            )
-
-            # ── 11. 更新追踪 ──
+            # ── 10. 更新追踪 (graph node 已在成功检查前创建) ──
             steps_in_planner += 1
             planner_calls[planner_name] = planner_calls.get(planner_name, 0) + 1
             result_turns.append(ConversationTurn(
@@ -297,8 +300,6 @@ class AttackScheduler:
                 metadata={"planner": planner_name, "strategy": plan.strategy,
                           "alignment": round(alignment, 3)}
             ))
-            if score > best_node.judge_score:
-                best_node = new_node
 
             # ── 12. Alignment 连续追踪 ──
             if embedder_live and plan.expected_response and alignment < self.config.alignment_floor:

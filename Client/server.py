@@ -25,7 +25,8 @@ from scheduler.scheduler import AttackScheduler, SchedulerConfig
 app = Flask(__name__, static_folder="static", static_url_path="")
 
 # ── 活跃会话管理 ──
-_active_sessions: dict = {}  # session_id -> {"thread": ..., "stop": bool, "queue": Queue}
+_active_sessions: dict = {}  # session_id -> {"thread": ..., "stop": bool, "queue": Queue, "result": AttackResult}
+_export_data: dict = {}      # session_id -> full turn data for export
 
 
 class _StopAttack(Exception):
@@ -84,10 +85,18 @@ def _run_attack_stream(session_id: str, params: dict):
                     max_llm_calls=20,
                     success_threshold=params.get("threshold", 0.5),
                 )
+                export_turns = []  # 完整对话记录(不截断)
                 def on_round(rnum, pname, prompt, resp, score, reason,
                              attack_state=None):
                     if _active_sessions.get(session_id, {}).get("stop"):
                         raise _StopAttack()
+                    # 保存完整数据供导出
+                    export_turns.append({
+                        "round": rnum, "planner": pname,
+                        "prompt": prompt, "response": resp,
+                        "score": score, "reason": reason,
+                    })
+                    # SSE 推送截断版本
                     emit("round", {
                         "round": rnum, "planner": pname,
                         "prompt": prompt[:200], "response": resp[:200],
@@ -98,6 +107,14 @@ def _run_attack_stream(session_id: str, params: dict):
                                            on_round=on_round)
                 try:
                     result = scheduler.attack(goal)
+                    _export_data[session_id] = {
+                        "goal": goal,
+                        "success": result.success,
+                        "best_score": result.best_score,
+                        "planner": "graph",
+                        "turns": export_turns,
+                        "metadata": result.metadata,
+                    }
                     emit("result", _result_to_dict(result, "graph", goal))
                 except _StopAttack:
                     emit("status", {"msg": "Stopped by user.", "type": "warn"})
@@ -107,6 +124,24 @@ def _run_attack_stream(session_id: str, params: dict):
                 _patch_planner_stream(planner, emit, session_id)
                 try:
                     result = planner.attack(goal)
+                    # 保存完整数据供导出
+                    _export_data[session_id] = {
+                        "goal": goal,
+                        "success": result.success,
+                        "best_score": result.best_score,
+                        "planner": planner_name,
+                        "turns": [
+                            {
+                                "round": t.round_num,
+                                "role": t.role,
+                                "content": t.content,
+                                "score": t.score,
+                                "reason": t.judge_reason or "",
+                            }
+                            for t in (result.turns or [])
+                        ],
+                        "metadata": result.metadata,
+                    }
                     emit("result", _result_to_dict(result, planner_name, goal))
                 except _StopAttack:
                     emit("status", {"msg": "Stopped by user.", "type": "warn"})
@@ -314,6 +349,55 @@ def api_stop(session_id):
         _active_sessions[session_id]["stop"] = True
         return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "Session not found"})
+
+
+@app.route("/api/export/<session_id>")
+def api_export(session_id):
+    """导出完整攻防对话."""
+    if session_id not in _export_data:
+        return jsonify({"ok": False, "error": "Session not found or not finished"}), 404
+
+    data = _export_data[session_id]
+
+    # 格式化为可读文本
+    lines = []
+    lines.append("=" * 70)
+    lines.append(f"  NCRT v3 — Attack Export")
+    lines.append("=" * 70)
+    lines.append(f"  Goal:         {data['goal']}")
+    lines.append(f"  Planner:      {data['planner']}")
+    lines.append(f"  Success:      {data['success']}")
+    lines.append(f"  Best Score:   {data['best_score']:.2f}")
+    lines.append(f"  Total Turns:  {len(data['turns'])}")
+    lines.append("=" * 70)
+    lines.append("")
+
+    for t in data["turns"]:
+        lines.append(f"─── Round {t['round']} ({t.get('planner', '')}) "
+                     f"[score={t.get('score', '?'):.2f}] ───")
+        lines.append("")
+        lines.append(f"  PROMPT:")
+        lines.append(f"  {t.get('prompt', '')}")
+        lines.append("")
+        lines.append(f"  RESPONSE:")
+        lines.append(f"  {t.get('response', '')}")
+        lines.append("")
+        if t.get("reason"):
+            lines.append(f"  JUDGE: {t['reason']}")
+            lines.append("")
+        lines.append("")
+
+    lines.append("=" * 70)
+    lines.append("  End of Export")
+    lines.append("=" * 70)
+
+    text = "\n".join(lines)
+
+    return Response(
+        text,
+        mimetype="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename=attack_export_{session_id}.txt"}
+    )
 
 
 @app.route("/api/dataset/preview")

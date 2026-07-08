@@ -402,7 +402,8 @@ function renderRounds() {
     const cls = finalResult.success ? "result-success" : "result-fail";
     html += `<div class="result-banner ${cls}"><div class="icon">${finalResult.success?"&#9989;":"&#10060;"}</div>
       <div class="info"><div class="big">Score: ${finalResult.best_score.toFixed(2)} — ${finalResult.rounds} rounds</div>
-      <div style="margin-top:2px;color:var(--text-dim);">${finalResult.final_prompt?escapeHtml(finalResult.final_prompt).substring(0,150)+"...":""}</div></div></div>`;
+      <div style="margin-top:2px;color:var(--text-dim);">${finalResult.final_prompt?escapeHtml(finalResult.final_prompt).substring(0,150)+"...":""}</div>
+      <a href="/api/export/${sessionId}" target="_blank" style="margin-left:auto;font-size:11px;color:var(--accent);text-decoration:none;white-space:nowrap;">&#128229; 导出完整对话</a></div></div>`;
     finalResult = null;
   }
   for (const r of rounds.slice(-10)) {
