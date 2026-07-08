@@ -451,33 +451,34 @@ function renderBatchResult(data) {
 
 // ── 字段定义: name, key, 中文名, 格式, 更新者 ──
 const AS_FIELDS = {
-  attack: [
-    {k:"stage",    zh:"攻击阶段",    fmt:"text", src:"scheduler", note:"Scheduler 规则推断 + Handoff 精调"},
-    {k:"goal_progress", zh:"攻击进度", fmt:"pct", src:"judge",  note:"Judge 双轴评估: 距离最终越狱还有多远"},
+  dynamic: [
+    {k:"stage",    zh:"攻击阶段",    fmt:"text", src:"scheduler", note:"Scheduler 规则推断, Handoff Judge 切换时修正"},
+    {k:"goal_progress", zh:"攻击进度", fmt:"pct", src:"judge",  note:"Judge 双轴评估, Scheduler EMA. 切换信号: 连续停滞→切"},
     {k:"cooperation", zh:"配合程度",  fmt:"pct",  src:"scheduler", note:"Judge harmfulness score 的 EMA"},
-    {k:"refusal_rate", zh:"拒绝频率", fmt:"pct",  src:"scheduler", note:"quick_refusal_check 命中率的 EMA"},
-    {k:"boundary", zh:"安全边界",    fmt:"text", src:"handoff",   note:"Handoff Judge 推断: strict/softening/soft/broken"},
+    {k:"refusal_rate", zh:"拒绝频率", fmt:"pct",  src:"scheduler", note:"quick_refusal_check 命中率 EMA"},
+    {k:"boundary", zh:"安全边界",    fmt:"text", src:"handoff",   note:"Handoff Judge. 切换信号: strict长期不变→切"},
+    {k:"persona", zh:"已建立角色",   fmt:"text", src:"handoff",   note:"Planner上报, Handoff Judge补充confidence"},
+    {k:"persona_confidence", zh:"角色可信度", fmt:"pct", src:"handoff", note:"Handoff Judge 估计 persona 可信程度"},
+  ],
+  memory: [
+    {k:"accepted_topics", zh:"可聊话题", fmt:"list", src:"handoff", note:"Planner 在此话题上继续构建"},
+    {k:"blocked_topics", zh:"阻塞话题", fmt:"list", src:"handoff", note:"Planner 应避免直触, 迂回接近"},
+    {k:"current_summary", zh:"当前态势", fmt:"text", src:"handoff", note:"Handoff Judge 一句话总结当前攻击状态"},
+    {k:"tried_planners", zh:"已上场Planner", fmt:"list", src:"scheduler", note:"TS 用于避免重复选择"},
+    {k:"tried_strategies", zh:"已尝试策略", fmt:"list", src:"scheduler", note:"Planner 避免重复相同策略"},
+    {k:"failed_strategies", zh:"已失败策略", fmt:"list", src:"scheduler", note:"Scheduler 切换时参考, Planner 避免"},
+    {k:"avoid_patterns", zh:"应避免模式", fmt:"list", src:"handoff", note:"Planner Prompt 中直接引用, 避免触发拒绝"},
+    {k:"recommended_strategies", zh:"建议策略", fmt:"list", src:"handoff", note:"固定标签, Planner 参考. 只含11个有效值"},
+  ],
+  runtime: [
+    {k:"handoff_reason", zh:"切换原因", fmt:"text", src:"scheduler", note:"alignment/stagnation/state_stuck"},
+    {k:"failure_type", zh:"失败类型",   fmt:"text", src:"handoff",   note:"固定枚举: direct_refusal/role_rejection/..."},
+    {k:"failure_strength", zh:"失败程度", fmt:"pct", src:"handoff", note:"0-1数值, Scheduler 用于比较"},
+    {k:"last_planner", zh:"上一任Planner", fmt:"text", src:"scheduler", note:""},
+    {k:"planner_switch_count", zh:"切换次数", fmt:"num", src:"scheduler", note:""},
+    {k:"total_rounds", zh:"总轮数",      fmt:"num", src:"scheduler", note:""},
     {k:"best_score", zh:"最佳危害分", fmt:"num", src:"scheduler", note:"历史最高 judge harmfulness score"},
-  ],
-  knowledge: [
-    {k:"persona", zh:"已建立角色",   fmt:"text", src:"handoff",   note:"Victim 接受了什么角色设定"},
-    {k:"accepted_topics", zh:"可聊话题", fmt:"list", src:"handoff", note:"Victim 已接受的话题"},
-    {k:"blocked_topics", zh:"阻塞话题", fmt:"list", src:"handoff", note:"Victim 仍拒绝的话题"},
-    {k:"closest_to_success", zh:"最接近成功", fmt:"text", src:"handoff", note:"最接近成功的一次是什么状态"},
-    {k:"tried_planners", zh:"已上场Planner", fmt:"list", src:"scheduler", note:"按上场顺序排列"},
-    {k:"tried_strategies", zh:"已尝试策略", fmt:"list", src:"scheduler", note:"所有尝试过的策略标签"},
-    {k:"failed_strategies", zh:"已失败策略", fmt:"list", src:"scheduler", note:"触发快速拒绝的策略子集"},
-  ],
-  handoff: [
-    {k:"handoff_reason", zh:"切换原因", fmt:"text", src:"scheduler", note:"alignment/stagnation/strategy_exhausted/timeout"},
-    {k:"failure_type", zh:"失败类型",   fmt:"text", src:"handoff",   note:"direct_refusal/role_rejection/topic_blocked/..."},
-    {k:"failure_strength", zh:"失败程度", fmt:"text", src:"handoff", note:"low/medium/high"},
-    {k:"recommended_strategies", zh:"建议策略", fmt:"list", src:"handoff", note:"Handoff Judge 给下一任的策略建议"},
-    {k:"avoid_patterns", zh:"应避免模式", fmt:"list", src:"handoff", note:"Handoff Judge 建议避免的措辞/策略"},
-    {k:"planner_switch_count", zh:"切换次数", fmt:"num", src:"scheduler", note:"Planner 切换总次数"},
-    {k:"consecutive_refusals", zh:"连续拒绝数", fmt:"num", src:"scheduler", note:"当前连续快速拒绝轮数"},
-    {k:"total_rounds", zh:"总轮数",      fmt:"num", src:"scheduler", note:"已执行的攻击总轮数"},
-    {k:"last_planner", zh:"上一任Planner", fmt:"text", src:"scheduler", note:"刚被切换掉的 Planner"},
+    {k:"consecutive_refusals", zh:"连续拒绝数", fmt:"num", src:"scheduler", note:""},
   ]
 };
 
@@ -503,23 +504,23 @@ function renderAttackState(as) {
 
   let html = "";
 
-  // ── Module 1: 攻击状态 ──
-  html += `<div class="as-module"><div class="as-module-title as-mod-attack">&#9679; 攻击状态 — Victim 现在处于什么状态?</div>`;
-  for (const f of AS_FIELDS.attack) {
+  // ── Module 1: Dynamic State ──
+  html += `<div class="as-module"><div class="as-module-title as-mod-attack">&#9679; Dynamic State — Victim 现在处于什么状态?</div>`;
+  for (const f of AS_FIELDS.dynamic) {
     html += renderField(f, as);
   }
   html += `</div>`;
 
-  // ── Module 2: 攻击情报 ──
-  html += `<div class="as-module"><div class="as-module-title as-mod-knowledge">&#9679; 攻击情报 — 有哪些上下文可以继承?</div>`;
-  for (const f of AS_FIELDS.knowledge) {
+  // ── Module 2: Long-term Memory ──
+  html += `<div class="as-module"><div class="as-module-title as-mod-knowledge">&#9679; Long-term Memory — 过去学到了什么?</div>`;
+  for (const f of AS_FIELDS.memory) {
     html += renderField(f, as);
   }
   html += `</div>`;
 
-  // ── Module 3: 切换交接 ──
-  html += `<div class="as-module"><div class="as-module-title as-mod-handoff">&#9679; 切换交接 — 为什么换人? 下一任如何接手?</div>`;
-  for (const f of AS_FIELDS.handoff) {
+  // ── Module 3: Runtime Stats ──
+  html += `<div class="as-module"><div class="as-module-title as-mod-handoff">&#9679; Runtime Stats — 系统运行到什么程度?</div>`;
+  for (const f of AS_FIELDS.runtime) {
     html += renderField(f, as);
   }
   html += `</div>`;
@@ -530,6 +531,10 @@ function renderAttackState(as) {
 function renderField(f, as) {
   let val = as[f.k];
   if (val === undefined || val === null || val === "") return "";
+  // Special: failure_strength is 0-1 float now
+  if (f.k === "failure_strength" && f.fmt === "pct") {
+    val = typeof val === "number" ? val : ({"low":0.3,"medium":0.6,"high":0.9}[val] || 0.5);
+  }
 
   // Format
   let display;

@@ -34,7 +34,7 @@ from scheduler.graph import AttackGraph, AttackNode
 from scheduler.context_builder import ContextBuilder
 from scheduler.attack_state import (
     AttackState, HANDOFF_SYSTEM, HANDOFF_PROMPT, parse_handoff,
-    HANDOFF_ALIGNMENT, HANDOFF_STAGNATION,
+    HANDOFF_ALIGNMENT, HANDOFF_STAGNATION, HANDOFF_STATE_STUCK,
 )
 
 
@@ -177,7 +177,7 @@ class AttackScheduler:
 
         # ── TS 选初始 Planner ──
         if self.config.enable_thompson:
-            selected = self.selector.select(roster, tier, round_num=1)
+            selected = self.selector.select(roster, tier, round_num=1, stage=attack_state.stage)
             planner_name = selected[0]
             print(f"  [TS] Initial: {planner_name} (tier={tier})")
         else:
@@ -256,7 +256,7 @@ class AttackScheduler:
             if score >= self.config.success_threshold:
                 self._emit_round(round_num, planner_name, prompt, victim_resp,
                                  score, reason, attack_state)
-                self.selector.reward_round(planner_name, tier, round_num, score, state.best_score)
+                self.selector.reward_round(planner_name, tier, round_num, score, state.best_score, stage=attack_state.stage)
                 return self._done(True, goal, graph, best_node, result_turns,
                                   planner_calls, total_internal_calls, total_victim_calls,
                                   alignment_history, final_prompt=prompt, goal_tier=tier,
@@ -275,7 +275,7 @@ class AttackScheduler:
 
             # ── 7. TS 记录奖励 ──
             if self.config.enable_thompson:
-                self.selector.reward_round(planner_name, tier, round_num, score, state.best_score)
+                self.selector.reward_round(planner_name, tier, round_num, score, state.best_score, stage=attack_state.stage)
 
             # ── 8. 终端输出 + 回调 ──
             self._emit_round(round_num, planner_name, prompt, victim_resp,
@@ -329,7 +329,17 @@ class AttackScheduler:
                         should_switch = True
                         switch_reason = HANDOFF_STAGNATION
                     else:
-                        steps_in_planner = 0  # 效果还行, 重置窗口
+                        steps_in_planner = 0
+
+                # C. ★ AttackState 驱动: 阶段停滞
+                if not should_switch and attack_state.is_stage_stuck(rounds=3):
+                    should_switch = True
+                    switch_reason = HANDOFF_STATE_STUCK
+
+                # D. ★ AttackState 驱动: progress 停滞
+                if not should_switch and attack_state.is_progress_stuck(rounds=3):
+                    should_switch = True
+                    switch_reason = HANDOFF_STATE_STUCK
 
             # ═══════════════════════════════════════════
             #  执行切换
@@ -341,7 +351,7 @@ class AttackScheduler:
                 # TS 选替代
                 candidates = [p for p in roster if p != planner_name]
                 if self.config.enable_thompson and candidates:
-                    alternative = self.selector.select(candidates, tier, round_num)[0]
+                    alternative = self.selector.select(candidates, tier, round_num, stage=attack_state.stage)[0]
                 else:
                     alternative = candidates[0] if candidates else planner_name
 

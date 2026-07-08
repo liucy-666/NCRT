@@ -47,17 +47,20 @@ class PhaseStratifiedBandit:
     def __init__(self):
         self._params: Dict[str, Tuple[float, float]] = {}
 
-    def _key(self, planner: str, goal_tier: str, phase: str) -> str:
-        return f"{planner}|{goal_tier}|{phase}"
+    def _key(self, planner: str, goal_tier: str, phase: str,
+             stage: str = "") -> str:
+        base = f"{planner}|{goal_tier}|{phase}"
+        return f"{base}|{stage}" if stage else base
 
-    def sample(self, planner: str, goal_tier: str, phase: str) -> float:
+    def sample(self, planner: str, goal_tier: str, phase: str,
+               stage: str = "") -> float:
         alpha, beta = self._params.get(
-            self._key(planner, goal_tier, phase), (1.0, 1.0))
+            self._key(planner, goal_tier, phase, stage), (1.0, 1.0))
         return random.betavariate(alpha, beta)
 
     def update(self, planner: str, goal_tier: str, phase: str,
-               improved: bool):
-        key = self._key(planner, goal_tier, phase)
+               improved: bool, stage: str = ""):
+        key = self._key(planner, goal_tier, phase, stage)
         alpha, beta = self._params.get(key, (1.0, 1.0))
         if improved:
             alpha += 1.0
@@ -65,8 +68,9 @@ class PhaseStratifiedBandit:
             beta += 1.0
         self._params[key] = (alpha, beta)
 
-    def get_stats(self, planner: str, goal_tier: str, phase: str) -> Dict:
-        key = self._key(planner, goal_tier, phase)
+    def get_stats(self, planner: str, goal_tier: str, phase: str,
+                  stage: str = "") -> Dict:
+        key = self._key(planner, goal_tier, phase, stage)
         alpha, beta = self._params.get(key, (1.0, 1.0))
         trials = alpha + beta - 2
         return {
@@ -107,18 +111,18 @@ class ThompsonSelector:
     # ── 选择 ──
 
     def select(self, planners: List[str], goal_tier: str,
-               round_num: int = 1, top_k: int = 1) -> List[str]:
+               round_num: int = 1, top_k: int = 1,
+               stage: str = "") -> List[str]:
         phase = get_phase(round_num)
-        total = self._total_trials(goal_tier, phase)
+        total = self._total_trials(goal_tier, phase, stage)
 
         if total < len(planners) * 2:
-            # 冷启动: 随机排列探索
             shuffled = list(planners)
             random.shuffle(shuffled)
             return shuffled[:top_k]
 
-        # Thompson Sampling
-        samples = [(p, self.bandit.sample(p, goal_tier, phase))
+        # Thompson Sampling (state-aware: stage 加入 key)
+        samples = [(p, self.bandit.sample(p, goal_tier, phase, stage))
                    for p in planners]
         samples.sort(key=lambda x: -x[1])
         return [p for p, _ in samples[:top_k]]
@@ -126,10 +130,10 @@ class ThompsonSelector:
     # ── 逐轮 reward ──
 
     def reward_round(self, planner: str, goal_tier: str, round_num: int,
-                     score: float, best_before: float):
+                     score: float, best_before: float, stage: str = ""):
         phase = get_phase(round_num)
         improved = score > best_before
-        self.bandit.update(planner, goal_tier, phase, improved)
+        self.bandit.update(planner, goal_tier, phase, improved, stage)
 
     # ── Episode 级 reward ──
 
@@ -235,9 +239,9 @@ class ThompsonSelector:
                           f"{s['improve_rate']:>6.1%}")
         print(f"\n  {'='*80}")
 
-    def _total_trials(self, goal_tier: str, phase: str) -> int:
+    def _total_trials(self, goal_tier: str, phase: str, stage: str = "") -> int:
         total = 0
         for p in ["crescendo", "pair", "tap", "sema", "icrt", "safe2harm"]:
-            s = self.bandit.get_stats(p, goal_tier, phase)
+            s = self.bandit.get_stats(p, goal_tier, phase, stage)
             total += s["trials"]
         return total
