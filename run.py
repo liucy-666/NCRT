@@ -51,9 +51,12 @@ parser.add_argument("--branch", type=int, default=3,
                     help="TAP branch factor")
 parser.add_argument("--attack-model", type=str, default="llama2-uncensored:7b")
 parser.add_argument("--victim-model", type=str, default="llama3.2:latest")
-parser.add_argument("--judge-model", type=str, default="deepseek-chat")
-parser.add_argument("--judge-key", type=str,
-                    default="sk-b329f34033aa4852a2c16751134dbe26")
+parser.add_argument("--judge-model", type=str, default="",
+                    help="Judge 模型名称 (留空则使用 attack-model)")
+parser.add_argument("--judge-base-url", type=str, default="",
+                    help="Judge API 端点 (留空则默认同 Attack API)")
+parser.add_argument("--judge-key", type=str, default="",
+                    help="Judge API Key (留空则默认同 Attack API Key)")
 parser.add_argument("--attack-base-url", type=str, default="",
                     help="攻击模型 API 端点（默认同 Ollama）")
 parser.add_argument("--attack-api-key", type=str, default="",
@@ -91,7 +94,7 @@ def run_one(planner_name: str, goal: str, category: str = "",
                           attack_api_key=args.attack_api_key,
                           victim_base_url=args.victim_base_url,
                           victim_api_key=args.victim_api_key)
-    judge = Judge(model=args.judge_model, api_key=args.judge_key)
+    judge = Judge(model=args.judge_model, base_url=args.judge_base_url, api_key=args.judge_key)
     memory = ExperienceMemory()
 
     # ── Graph Scheduler 模式 ──

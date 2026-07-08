@@ -39,18 +39,21 @@ class Generator:
         self._victim_calls = 0
 
     def generate(self, prompt: str, system: str = "",
-                 temperature: float = 0.8, max_tokens: int = 512) -> str:
+                 temperature: float = 0.8, max_tokens: int = 512,
+                 bypass_cache: bool = False) -> str:
         """生成文本，自动缓存."""
 
         import hashlib
-        key = hashlib.md5((system + prompt + str(temperature)).encode()).hexdigest()
-        if key in self._cache:
-            self._cache_hits += 1
-            return self._cache[key]
+        if not bypass_cache:
+            key = hashlib.md5((system + prompt + str(temperature)).encode()).hexdigest()
+            if key in self._cache:
+                self._cache_hits += 1
+                return self._cache[key]
 
         result = self._call(prompt, system, temperature, max_tokens)
         if result and len(result) > 10 and not result.startswith("[ERROR"):
-            self._cache[key] = result
+            if not bypass_cache:
+                self._cache[key] = result
         return result
 
     def _call(self, prompt: str, system: str, temperature: float, max_tokens: int) -> str:
@@ -67,10 +70,14 @@ class Generator:
     def _call_model(self, model: str, prompt: str, system: str,
                     temperature: float, max_tokens: int,
                     base_url: str = "", api_key: str = "") -> str:
-        import requests, json
+        import requests, json, re
 
         url = base_url or self.base_url
         key = api_key or self.api_key
+
+        # 自动补全 /v1 版本路径（兼容用户只填 https://api.xxx.com 的情况）
+        if not re.search(r'/v\d+$', url):
+            url = url.rstrip('/') + '/v1'
 
         messages = []
         if system:

@@ -63,12 +63,10 @@ class AdaptiveLimiter:
     """自适应限流：根据 API 类型自动选策略。
 
     - Ollama 本地: 不限流
-    - DeepSeek API: 默认 2 req/s
-    - 其他 OpenAI 兼容: 默认 5 req/s
+    - OpenAI 兼容 API: 默认 5 req/s
     """
 
     DEFAULT_RATES = {
-        "deepseek": 2.0,
         "openai": 5.0,
         "ollama": float("inf"),
         "127.0.0.1": float("inf"),

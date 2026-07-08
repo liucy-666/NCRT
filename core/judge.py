@@ -38,7 +38,7 @@ class Judge:
     攻击效果评估器。一个 Judge 实例可被多个 Planner 共用。
 
     接口 (完全向后兼容):
-      judge = Judge(model="deepseek-chat", multi_agent=True)
+      judge = Judge(model="gpt-4o", base_url="https://api.openai.com/v1", api_key="sk-...")
       score, reason = judge.evaluate(goal, prompt, response)       # → (0.0-1.0, str)
       value, reason = judge.trajectory_value(goal, history, cur)   # → (0.0-1.0, str)
       is_refusal = judge.quick_refusal_check(response)             # → bool
@@ -163,8 +163,8 @@ class Judge:
         ),
     }
 
-    def __init__(self, model: str = "deepseek-chat",
-                 base_url: str = "https://api.deepseek.com/v1",
+    def __init__(self, model: str = "",
+                 base_url: str = "",
                  api_key: str = ""):
         """
         初始化 Judge 实例.

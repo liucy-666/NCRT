@@ -70,7 +70,8 @@ def _run_attack_stream(session_id: str, params: dict):
             victim_api_key=params.get("victim_api_key", ""),
         )
         judge = Judge(
-            model=params.get("judge_model", "deepseek-chat"),
+            model=params.get("judge_model", ""),
+            base_url=params.get("judge_base_url", ""),
             api_key=params.get("judge_key", ""),
         )
 

@@ -88,7 +88,7 @@ class Safe2HarmPlanner(BasePlanner):
     """语义同构攻击规划器."""
 
     name = "safe2harm"
-    max_retries = 3  # 论文建议最多重试3次
+    max_retries = 1  # 只进行一轮攻击
 
     def __init__(self, config: Optional[PlannerConfig] = None,
                  generator: Optional[Generator] = None,
@@ -213,6 +213,7 @@ class Safe2HarmPlanner(BasePlanner):
             system=SAFE2HARM_REWRITE_SYSTEM,
             temperature=0.7,
             max_tokens=300,
+            bypass_cache=True,
         )
         return result.strip()
 
@@ -225,6 +226,7 @@ class Safe2HarmPlanner(BasePlanner):
             system=SAFE2HARM_MAPPING_SYSTEM,
             temperature=0.3,
             max_tokens=200,
+            bypass_cache=True,
         )
 
         # 解析 JSON 数组
@@ -259,6 +261,7 @@ class Safe2HarmPlanner(BasePlanner):
             ).replace("{harmful_topic}", harmful_topic),
             temperature=0.8,
             max_tokens=min(1024, len(safe_response) + 200),
+            bypass_cache=True,
         )
         return result.strip() if result.strip() else safe_response
 

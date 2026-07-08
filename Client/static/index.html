@@ -182,7 +182,6 @@ select { cursor:pointer; }
       <input id="cfg-attack-model" value="llama2-uncensored:7b" placeholder="model name">
       <select id="cfg-attack-preset" onchange="onAttackPreset(this.value)" style="width:80px;">
         <option value="ollama">Ollama</option>
-        <option value="deepseek">DeepSeek</option>
         <option value="custom">Custom</option>
       </select>
     </div>
@@ -195,15 +194,15 @@ select { cursor:pointer; }
       <input id="cfg-victim-model" value="llama3.2:latest" placeholder="model name">
       <select id="cfg-victim-preset" onchange="onVictimPreset(this.value)" style="width:80px;">
         <option value="ollama">Ollama</option>
-        <option value="deepseek">DeepSeek</option>
         <option value="custom">Custom</option>
       </select>
     </div>
   </div>
   <div class="form-group"><label>Victim API URL</label><input id="cfg-victim-url" placeholder="http://127.0.0.1:11434/v1"></div>
   <div class="form-group"><label>Victim API Key</label><input id="cfg-victim-key" type="password" placeholder="ollama"></div>
-  <div class="form-group"><label>Judge Model</label><input id="cfg-judge-model" value="deepseek-chat"></div>
-  <div class="form-group"><label>Judge API Key</label><input id="cfg-judge-key" type="password" value="sk-b329f34033aa4852a2c16751134dbe26"></div>
+  <div class="form-group"><label>Judge Model</label><input id="cfg-judge-model" value="" placeholder="e.g. gpt-4o, claude-sonnet-5"></div>
+  <div class="form-group"><label>Judge API URL</label><input id="cfg-judge-url" placeholder="https://api.openai.com/v1"></div>
+  <div class="form-group"><label>Judge API Key</label><input id="cfg-judge-key" type="password" placeholder="sk-..."></div>
 
   <div class="form-row">
     <div class="form-group"><label>Scale (batch)</label><input id="cfg-scale" type="text" value="10" placeholder="10 or all"></div>
@@ -242,35 +241,34 @@ select { cursor:pointer; }
 
 <script>
 // ═══ Presets ═══
-const DEEPSEEK_URL = "https://api.deepseek.com/v1";
 const OLLAMA_URL = "http://127.0.0.1:11434/v1";
 
 function onAttackPreset(v) {
-  if (v === "deepseek") {
-    document.getElementById("cfg-attack-model").value = "deepseek-chat";
-    document.getElementById("cfg-attack-url").value = DEEPSEEK_URL;
-    document.getElementById("cfg-attack-key").value = document.getElementById("cfg-judge-key").value;
-  } else if (v === "ollama") {
+  if (v === "ollama") {
     document.getElementById("cfg-attack-model").value = "llama2-uncensored:7b";
-    document.getElementById("cfg-attack-url").value = "";
-    document.getElementById("cfg-attack-key").value = "";
+    document.getElementById("cfg-attack-url").value = OLLAMA_URL;
+    document.getElementById("cfg-attack-key").value = "ollama";
   } else {
+    // Custom: 用户自行填写 API URL 和 Key
+    document.getElementById("cfg-attack-model").value = "";
     document.getElementById("cfg-attack-url").value = "";
     document.getElementById("cfg-attack-key").value = "";
+    document.getElementById("cfg-attack-url").placeholder = "https://your-api.com/v1";
+    document.getElementById("cfg-attack-key").placeholder = "sk-your-key";
   }
 }
 function onVictimPreset(v) {
-  if (v === "deepseek") {
-    document.getElementById("cfg-victim-model").value = "deepseek-chat";
-    document.getElementById("cfg-victim-url").value = DEEPSEEK_URL;
-    document.getElementById("cfg-victim-key").value = document.getElementById("cfg-judge-key").value;
-  } else if (v === "ollama") {
+  if (v === "ollama") {
     document.getElementById("cfg-victim-model").value = "llama3.2:latest";
-    document.getElementById("cfg-victim-url").value = "";
-    document.getElementById("cfg-victim-key").value = "";
+    document.getElementById("cfg-victim-url").value = OLLAMA_URL;
+    document.getElementById("cfg-victim-key").value = "ollama";
   } else {
+    // Custom: 用户自行填写 API URL 和 Key
+    document.getElementById("cfg-victim-model").value = "";
     document.getElementById("cfg-victim-url").value = "";
     document.getElementById("cfg-victim-key").value = "";
+    document.getElementById("cfg-victim-url").placeholder = "https://your-api.com/v1";
+    document.getElementById("cfg-victim-key").placeholder = "sk-your-key";
   }
 }
 
@@ -289,6 +287,7 @@ function getConfig() {
     victim_base_url: document.getElementById("cfg-victim-url").value,
     victim_api_key: document.getElementById("cfg-victim-key").value,
     judge_model: document.getElementById("cfg-judge-model").value,
+    judge_base_url: document.getElementById("cfg-judge-url").value,
     judge_key: document.getElementById("cfg-judge-key").value,
     scale: document.getElementById("cfg-scale").value,
     workers: parseInt(document.getElementById("cfg-workers").value) || 1,
