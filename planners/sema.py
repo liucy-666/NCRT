@@ -135,6 +135,9 @@ class SEMAPlanner(BasePlanner):
         # 构建上下文
         context = state.to_prompt_context()
 
+        # AttackState 摘要 (Scheduler 维护, Planner 直接消费)
+        attack_hint = self._attack_state_hint(state)
+
         # 检索相似成功经验
         memory_hint = ""
         if self.memory.total_records > 0:
@@ -170,6 +173,7 @@ class SEMAPlanner(BasePlanner):
             instruction = (
                 f"GOAL: {goal}\n\n"
                 f"{memory_hint}"
+                f"{attack_hint}\n\n"
                 f"HISTORY:\n{context}\n\n"
                 f"REFLECTION REQUIRED:\n{last_info}\n"
                 f"Best score so far: {state.best_score:.2f}\n\n"

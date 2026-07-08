@@ -57,7 +57,7 @@ def _run_attack_stream(session_id: str, params: dict):
         emit("status", {"msg": "Initializing...", "type": "info"})
 
         config = PlannerConfig(
-            max_rounds=params.get("rounds", 15),
+            max_rounds=20,
             success_threshold=params.get("threshold", 0.5),
         )
         generator = Generator(
@@ -81,16 +81,18 @@ def _run_attack_stream(session_id: str, params: dict):
 
             if planner_name == "graph":
                 sc = SchedulerConfig(
-                    max_llm_calls=params.get("rounds", 15) * 3,
+                    max_llm_calls=20,
                     success_threshold=params.get("threshold", 0.5),
                 )
-                def on_round(rnum, pname, prompt, resp, score, reason):
+                def on_round(rnum, pname, prompt, resp, score, reason,
+                             attack_state=None):
                     if _active_sessions.get(session_id, {}).get("stop"):
                         raise _StopAttack()
                     emit("round", {
                         "round": rnum, "planner": pname,
                         "prompt": prompt[:200], "response": resp[:200],
                         "score": score, "reason": reason[:200],
+                        "attack_state": attack_state.to_dict() if attack_state else None,
                     })
                 scheduler = AttackScheduler(config=sc, generator=generator, judge=judge,
                                            on_round=on_round)
