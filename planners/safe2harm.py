@@ -214,7 +214,7 @@ class Safe2HarmPlanner(BasePlanner):
             f"Please rewrite the following harmful content:\n{goal}{state_hint}",
             system=SAFE2HARM_REWRITE_SYSTEM,
             temperature=0.7,
-            max_tokens=300,
+            max_tokens=self.config.attack_max_tokens,
             bypass_cache=True,
         )
         return result.strip()
@@ -227,7 +227,7 @@ class Safe2HarmPlanner(BasePlanner):
             f"Sentence 2: {safe_q}",
             system=SAFE2HARM_MAPPING_SYSTEM,
             temperature=0.3,
-            max_tokens=200,
+            max_tokens=500,
             bypass_cache=True,
         )
 
@@ -262,7 +262,7 @@ class Safe2HarmPlanner(BasePlanner):
                 "{safe_topic}", safe_topic
             ).replace("{harmful_topic}", harmful_topic),
             temperature=0.8,
-            max_tokens=min(1024, len(safe_response) + 200),
+            max_tokens=self.config.attack_max_tokens,
             bypass_cache=True,
         )
         return result.strip() if result.strip() else safe_response

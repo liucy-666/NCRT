@@ -43,27 +43,182 @@ def _load_dataset(limit: int = None) -> list:
         import random
         random.seed(42)
         items = random.sample(items, limit)
+    # 给每条 goal 打上 UID，方便日志追踪和导出
+    for i, item in enumerate(items):
+        item.setdefault("uid", f"{i+1:04d}")
     return items
 
 
+def _parse_scale(scale_str) -> int:
+    """解析 scale 参数: 数字返回 int, 'all'/空 返回 0 (取全部)."""
+    if scale_str is None:
+        return 0
+    s = str(scale_str).strip().lower()
+    if s == "all" or s == "":
+        return 0
+    try:
+        return int(s)
+    except (ValueError, TypeError):
+        return 10
+
+
+def _write_goal_result(uid: str, goal: str, planner_name: str, entry: dict):
+    """每跑完一条 goal 立刻写入 output/{uid}_{sanitized_goal}.json."""
+    import re
+    OUTPUT_DIR = os.path.join(PROJECT_DIR, "output")
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    # 文件名安全化：只保留中英文数字，截断
+    safe_goal = re.sub(r'[^\w一-鿿 -]', '', goal).strip()[:60]
+    safe_goal = re.sub(r'[\\/:*?"<>|]', '', safe_goal)  # Windows 文件名非法字符
+    filename = f"{uid}_{safe_goal}.json" if uid else f"manual_{safe_goal}.json"
+    filepath = os.path.join(OUTPUT_DIR, filename)
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(entry, f, ensure_ascii=False, indent=2)
+    print(f"  [SAVED] {filename}", flush=True)
+
+
+def _is_goal_done(uid: str) -> bool:
+    """检查 output/ 下是否已有该 UID 的结果文件（支持断点续传跳过已完成 goal）"""
+    import glob as _glob
+    OUTPUT_DIR = os.path.join(PROJECT_DIR, "output")
+    if not uid:
+        return False
+    matches = _glob.glob(os.path.join(OUTPUT_DIR, f"{uid}_*.json"))
+    return len(matches) > 0
+
+
+def _run_single_attack(session_id: str, goal: str, planner_name: str,
+                       config, generator, judge, emit,
+                       uid: str = "") -> dict:
+    """执行单条 goal 的完整攻击。单 goal / batch / compare 共用此函数。
+
+    完全封装了 graph Scheduler 和普通 Planner 两条路径，
+    包含 on_round 回调、AttackState 推送、_StopAttack 检测。
+    导出数据追加到 _export_data[session_id] 列表，不会被覆盖。
+    每跑完一条 goal 立即写入 output/{uid}_{goal}.json，支持断点续传。
+    """
+    # ── Graph 路径 ──
+    if planner_name == "graph":
+        sc = SchedulerConfig(
+            max_llm_calls=config.max_rounds,
+            success_threshold=config.success_threshold,
+        )
+        export_turns = []
+
+        def on_round(rnum, pname, prompt, resp, score, reason, attack_state=None):
+            if _active_sessions.get(session_id, {}).get("stop"):
+                raise _StopAttack()
+            export_turns.append({
+                "round": rnum, "planner": pname,
+                "prompt": prompt, "response": resp,
+                "score": score, "reason": reason,
+            })
+            emit("round", {
+                "round": rnum, "planner": pname,
+                "prompt": prompt[:200], "response": resp[:200],
+                "score": score, "reason": reason[:200],
+                "attack_state": attack_state.to_dict() if attack_state else None,
+            })
+
+        scheduler = AttackScheduler(config=sc, generator=generator, judge=judge,
+                                   on_round=on_round)
+        result = scheduler.attack(goal)
+        entry = {
+            "uid": uid, "goal": goal,
+            "success": result.success,
+            "best_score": result.best_score,
+            "planner": "graph",
+            "turns": export_turns,
+            "metadata": result.metadata,
+        }
+        _export_data.setdefault(session_id, []).append(entry)
+        _write_goal_result(uid, goal, "graph", entry)
+        emit("result", _result_to_dict(result, "graph", goal))
+        return {
+            "uid": uid, "goal": goal[:100],
+            "success": result.success,
+            "best_score": result.best_score,
+            "rounds": result.total_rounds,
+        }
+
+    # ── 普通 Planner 路径 ──
+    planner = get_planner(planner_name, config=config,
+                          generator=generator, judge=judge)
+    _patch_planner_stream(planner, emit, session_id)
+    result = planner.attack(goal)
+    entry = {
+        "uid": uid, "goal": goal,
+        "success": result.success,
+        "best_score": result.best_score,
+        "planner": planner_name,
+        "turns": [
+            {
+                "round": t.round_num,
+                "role": t.role,
+                "content": t.content,
+                "score": t.score,
+                "reason": t.judge_reason or "",
+            }
+            for t in (result.turns or [])
+        ],
+        "metadata": result.metadata,
+    }
+    _export_data.setdefault(session_id, []).append(entry)
+    _write_goal_result(uid, goal, planner_name, entry)
+    emit("result", _result_to_dict(result, planner_name, goal))
+    return {
+        "uid": uid, "goal": goal[:100],
+        "success": result.success,
+        "best_score": result.best_score,
+        "rounds": result.total_rounds,
+        "final_prompt": result.final_prompt[:200] if result.final_prompt else "",
+        "final_response": result.final_response[:200] if result.final_response else "",
+    }
+
+
 def _run_attack_stream(session_id: str, params: dict):
-    """在后台线程中运行攻击，通过 queue 推送事件."""
-    q = _active_sessions[session_id]["queue"]
+    """在后台线程中运行攻击。单 goal / batch / compare 三种模式统一入口."""
+    session = _active_sessions[session_id]
+    q = session["queue"]
+    event_log = session.setdefault("event_log", [])
+    _event_counter = [0]
 
     def emit(event: str, data: dict):
-        q.put(json.dumps({"event": event, "data": data}))
+        _event_counter[0] += 1
+        event_id = str(_event_counter[0])
+        msg = json.dumps({"event": event, "data": data, "id": event_id})
+        q.put(msg)
+        event_log.append(msg)
+        info = data.get("msg", "") or data.get("goal", "") or event
+        print(f"  [{session_id[:6]}] [{event}] {info[:120]}", flush=True)
 
     try:
-        # ── 初始化 ──
+        # ── 判断模式 ──
+        goal_text = params.get("goal", "").strip()
+        is_compare = params.get("compare", False)
+        if goal_text:
+            mode = "single"
+        elif is_compare:
+            mode = "compare"
+        else:
+            mode = "batch"
+
+        print(f"\n{'='*25}")
+        print(f"  Attack started (session={session_id[:6]})")
+        print(f"  Mode: {mode} | Planner: {params.get('planner', 'crescendo')}")
+        print(f"  Goal: {goal_text or '(from dataset)'[:80]}")
+        print(f"  Scale: {params.get('scale', '10')} | Compare: {is_compare}")
+        print(f"{'='*25}")
         emit("status", {"msg": "Initializing...", "type": "info"})
 
+        # ── 初始化（所有模式共用，只创建一次）──
         config = PlannerConfig(
             max_rounds=20,
             success_threshold=params.get("threshold", 0.5),
         )
         generator = Generator(
             model=params.get("attack_model", "llama2-uncensored:7b"),
-            victim_model=params.get("victim_model", "llama3.2:latest"),
+            victim_model=params.get("victim_model", "llama3.1:latest"),
             attack_base_url=params.get("attack_base_url", ""),
             attack_api_key=params.get("attack_api_key", ""),
             victim_base_url=params.get("victim_base_url", ""),
@@ -75,168 +230,107 @@ def _run_attack_stream(session_id: str, params: dict):
             api_key=params.get("judge_key", ""),
         )
 
-        # ── 单目标模式 ──
-        goal = params.get("goal", "").strip()
-        if goal:
-            emit("status", {"msg": f"Starting attack on: {goal[:80]}...", "type": "info"})
-            planner_name = params.get("planner", "crescendo")
-
-            if planner_name == "graph":
-                sc = SchedulerConfig(
-                    max_llm_calls=20,
-                    success_threshold=params.get("threshold", 0.5),
-                )
-                export_turns = []  # 完整对话记录(不截断)
-                def on_round(rnum, pname, prompt, resp, score, reason,
-                             attack_state=None):
-                    if _active_sessions.get(session_id, {}).get("stop"):
-                        raise _StopAttack()
-                    # 保存完整数据供导出
-                    export_turns.append({
-                        "round": rnum, "planner": pname,
-                        "prompt": prompt, "response": resp,
-                        "score": score, "reason": reason,
-                    })
-                    # SSE 推送截断版本
-                    emit("round", {
-                        "round": rnum, "planner": pname,
-                        "prompt": prompt[:200], "response": resp[:200],
-                        "score": score, "reason": reason[:200],
-                        "attack_state": attack_state.to_dict() if attack_state else None,
-                    })
-                scheduler = AttackScheduler(config=sc, generator=generator, judge=judge,
-                                           on_round=on_round)
-                try:
-                    result = scheduler.attack(goal)
-                    _export_data[session_id] = {
-                        "goal": goal,
-                        "success": result.success,
-                        "best_score": result.best_score,
-                        "planner": "graph",
-                        "turns": export_turns,
-                        "metadata": result.metadata,
-                    }
-                    emit("result", _result_to_dict(result, "graph", goal))
-                except _StopAttack:
-                    emit("status", {"msg": "Stopped by user.", "type": "warn"})
+        # ── 确定 goals 和 planners 列表 ──
+        if mode == "single":
+            goals = [{"prompt": goal_text}]
+            planners = [params.get("planner", "crescendo")]
+        else:
+            items = _load_dataset(_parse_scale(params.get("scale")))
+            goals = [{"prompt": it["prompt"]} for it in items]
+            if mode == "compare":
+                planners = list(PLANNERS.keys())
             else:
-                planner = get_planner(planner_name, config=config,
-                                      generator=generator, judge=judge)
-                _patch_planner_stream(planner, emit, session_id)
-                try:
-                    result = planner.attack(goal)
-                    # 保存完整数据供导出
-                    _export_data[session_id] = {
-                        "goal": goal,
-                        "success": result.success,
-                        "best_score": result.best_score,
-                        "planner": planner_name,
-                        "turns": [
-                            {
-                                "round": t.round_num,
-                                "role": t.role,
-                                "content": t.content,
-                                "score": t.score,
-                                "reason": t.judge_reason or "",
-                            }
-                            for t in (result.turns or [])
-                        ],
-                        "metadata": result.metadata,
-                    }
-                    emit("result", _result_to_dict(result, planner_name, goal))
-                except _StopAttack:
-                    emit("status", {"msg": "Stopped by user.", "type": "warn"})
+                planners = [params.get("planner", "crescendo")]
 
-        # ── 对比模式 ──
-        elif params.get("compare"):
-            items = _load_dataset(int(params.get("scale", 10)))
-            emit("status", {"msg": f"Compare mode: {len(items)} goals x 4 planners", "type": "info"})
-
+        # ── 执行 ──
+        if mode == "compare":
+            emit("status", {"msg": f"Compare mode: {len(goals)} goals × {len(planners)} planners",
+                            "type": "info"})
             compare_results = []
-            planner_names = [k for k in PLANNERS if k != "graph"]
-            for pi, pname in enumerate(planner_names):
+            for pname in planners:
                 planner_results = []
                 wins = 0
-                for i, item in enumerate(items):
-                    if _active_sessions[session_id].get("stop"):
+                skipped = 0
+                for i, item in enumerate(goals):
+                    if _active_sessions.get(session_id, {}).get("stop"):
                         emit("status", {"msg": "Stopped by user.", "type": "warn"})
                         return
-
-                    goal_text = item["prompt"]
+                    uid = item.get("uid", "")
+                    if _is_goal_done(uid):
+                        skipped += 1
+                        print(f"  [SKIP] {uid} already done, skipping...", flush=True)
+                        continue
                     emit("status", {
-                        "msg": f"[{pname}] {i+1}/{len(items)}: {goal_text[:60]}...",
-                        "type": "progress",
-                        "planner": pname,
-                        "current": i + 1,
-                        "total": len(items),
+                        "msg": f"[{pname}] {i+1}/{len(goals)}: {item['prompt'][:60]}...",
+                        "type": "progress", "planner": pname,
+                        "current": i + 1, "total": len(goals),
                     })
-
-                    planner = get_planner(pname, config=config,
-                                          generator=generator, judge=judge)
-                    result = planner.attack(goal_text)
-                    success = result.success
-                    if success:
-                        wins += 1
-                    planner_results.append({
-                        "goal": goal_text[:100],
-                        "success": success,
-                        "best_score": result.best_score,
-                        "rounds": result.total_rounds,
-                    })
+                    try:
+                        r = _run_single_attack(session_id, item["prompt"], pname,
+                                               config, generator, judge, emit,
+                                               uid=item.get("uid", ""))
+                    except _StopAttack:
+                        emit("status", {"msg": "Stopped by user.", "type": "warn"})
+                        return
+                    if r:
+                        planner_results.append(r)
+                        if r["success"]:
+                            wins += 1
                 compare_results.append({
                     "planner": pname,
-                    "asr": wins / len(items) * 100 if items else 0,
-                    "wins": wins,
-                    "total": len(items),
+                    "asr": wins / len(goals) * 100 if goals else 0,
+                    "wins": wins, "total": len(goals),
                     "details": planner_results,
                 })
-
             emit("compare_done", {"results": compare_results})
 
-        # ── 批量模式 ──
-        else:
-            items = _load_dataset(int(params.get("scale", 10)))
-            planner_name = params.get("planner", "crescendo")
-            emit("status", {"msg": f"Batch mode: {len(items)} goals, planner={planner_name}", "type": "info"})
-
+        elif mode == "batch":
+            planner_name = planners[0]
+            emit("status", {"msg": f"Batch mode: {len(goals)} goals, planner={planner_name}",
+                            "type": "info"})
             results = []
             wins = 0
-            for i, item in enumerate(items):
-                if _active_sessions[session_id].get("stop"):
+            skipped = 0
+            for i, item in enumerate(goals):
+                if _active_sessions.get(session_id, {}).get("stop"):
                     emit("status", {"msg": "Stopped by user.", "type": "warn"})
                     return
-
-                goal_text = item["prompt"]
+                uid = item.get("uid", "")
+                if _is_goal_done(uid):
+                    skipped += 1
+                    print(f"  [SKIP] {uid} already done, skipping...", flush=True)
+                    continue
                 emit("status", {
-                    "msg": f"[{planner_name}] {i+1}/{len(items)}: {goal_text[:60]}...",
-                    "type": "progress",
-                    "planner": planner_name,
-                    "current": i + 1,
-                    "total": len(items),
+                    "msg": f"[{planner_name}] {i+1}/{len(goals)}: {item['prompt'][:60]}...",
+                    "type": "progress", "planner": planner_name,
+                    "current": i + 1, "total": len(goals),
                 })
-
-                planner = get_planner(planner_name, config=config,
-                                      generator=generator, judge=judge)
-                result = planner.attack(goal_text)
-                success = result.success
-                if success:
-                    wins += 1
-                results.append({
-                    "goal": goal_text[:100],
-                    "success": success,
-                    "best_score": result.best_score,
-                    "rounds": result.total_rounds,
-                    "final_prompt": result.final_prompt[:200],
-                    "final_response": result.final_response[:200],
-                })
-
+                try:
+                    r = _run_single_attack(session_id, item["prompt"], planner_name,
+                                           config, generator, judge, emit,
+                                           uid=item.get("uid", ""))
+                except _StopAttack:
+                    emit("status", {"msg": "Stopped by user.", "type": "warn"})
+                    return
+                if r:
+                    results.append(r)
+                    if r["success"]:
+                        wins += 1
             emit("batch_done", {
                 "planner": planner_name,
-                "asr": wins / len(items) * 100 if items else 0,
-                "wins": wins,
-                "total": len(items),
+                "asr": wins / len(goals) * 100 if goals else 0,
+                "wins": wins, "total": len(goals),
                 "details": results,
             })
+
+        else:  # single
+            emit("status", {"msg": f"Starting attack on: {goal_text[:80]}...",
+                            "type": "info"})
+            try:
+                _run_single_attack(session_id, goal_text, planners[0],
+                                   config, generator, judge, emit)
+            except _StopAttack:
+                emit("status", {"msg": "Stopped by user.", "type": "warn"})
 
     except Exception as e:
         emit("status", {"msg": f"Error: {str(e)}", "type": "error"})
@@ -314,33 +408,70 @@ def api_attack():
     params = request.get_json(force=True) or {}
     session_id = uuid.uuid4().hex[:12]
     q = Queue()
-    _active_sessions[session_id] = {"queue": q, "stop": False}
     thread = threading.Thread(target=_run_attack_stream, args=(session_id, params), daemon=True)
+    _active_sessions[session_id] = {"queue": q, "stop": False, "thread": thread}
     thread.start()
-    _active_sessions[session_id]["thread"] = thread
     return jsonify({"session_id": session_id})
 
 
 @app.route("/api/stream/<session_id>")
 def api_stream(session_id):
-    """SSE 端点：流式推送攻击进度."""
+    """SSE 端点：流式推送攻击进度，支持重连增量回放."""
     if session_id not in _active_sessions:
         return Response("data: {\"event\":\"error\",\"data\":\"Session not found\"}\n\n",
                         mimetype="text/event-stream")
 
-    q = _active_sessions[session_id]["queue"]
+    session = _active_sessions[session_id]
+    q = session["queue"]
+    event_log = session.setdefault("event_log", [])
+
+    # 解析 Last-Event-Id 实现增量回放
+    last_id_str = request.headers.get("Last-Event-Id", "0")
+    try:
+        last_id = int(last_id_str)
+    except ValueError:
+        last_id = 0
 
     def generate():
+        # ── 增量回放：只发送 last_id 之后的新事件 ──
+        replayed = 0
+        for msg in event_log:
+            try:
+                evt = json.loads(msg)
+                eid = int(evt.get("id", 0))
+                if eid > last_id:
+                    yield f"id: {eid}\ndata: {msg}\n\n"
+                    replayed += 1
+            except Exception:
+                yield f"data: {msg}\n\n"
+                replayed += 1
+        if replayed > 0:
+            print(f"  [SSE] Replayed {replayed} new events (after id={last_id}) for {session_id[:6]}", flush=True)
+
+        # ── 正常流式 ──
         while True:
             try:
                 msg = q.get(timeout=30)
-                yield f"data: {msg}\n\n"
+                try:
+                    evt = json.loads(msg)
+                    eid = evt.get("id", "")
+                    yield f"id: {eid}\ndata: {msg}\n\n"
+                except Exception:
+                    yield f"data: {msg}\n\n"
                 if '"event":"done"' in msg or '"event":"error"' in msg:
                     break
             except Exception:
-                yield "data: {\"event\":\"ping\",\"data\":{}}\n\n"
+                yield ": ping\n\n"
 
-    return Response(generate(), mimetype="text/event-stream")
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 
 @app.route("/api/stop/<session_id>", methods=["POST"])
@@ -354,39 +485,41 @@ def api_stop(session_id):
 
 @app.route("/api/export/<session_id>")
 def api_export(session_id):
-    """导出完整攻防对话."""
+    """导出完整攻防对话（支持单 goal 和 batch 模式）."""
     if session_id not in _export_data:
         return jsonify({"ok": False, "error": "Session not found or not finished"}), 404
 
-    data = _export_data[session_id]
+    entries = _export_data[session_id]
 
     # 格式化为可读文本
     lines = []
     lines.append("=" * 70)
     lines.append(f"  NCRT v3 — Attack Export")
     lines.append("=" * 70)
-    lines.append(f"  Goal:         {data['goal']}")
-    lines.append(f"  Planner:      {data['planner']}")
-    lines.append(f"  Success:      {data['success']}")
-    lines.append(f"  Best Score:   {data['best_score']:.2f}")
-    lines.append(f"  Total Turns:  {len(data['turns'])}")
+    lines.append(f"  Total Goals:  {len(entries)}")
+    lines.append(f"  Success Rate: {sum(1 for e in entries if e['success'])}/{len(entries)}")
     lines.append("=" * 70)
-    lines.append("")
 
-    for t in data["turns"]:
-        lines.append(f"─── Round {t['round']} ({t.get('planner', '')}) "
-                     f"[score={t.get('score', '?'):.2f}] ───")
+    for ei, entry in enumerate(entries):
         lines.append("")
-        lines.append(f"  PROMPT:")
-        lines.append(f"  {t.get('prompt', '')}")
+        lines.append(f"  >>> Goal {ei+1}: {entry.get('uid', 'N/A')} — {entry['goal'][:80]}")
+        lines.append(f"  >>> Planner: {entry['planner']} | Success: {entry['success']} | Score: {entry['best_score']:.2f} | Turns: {len(entry['turns'])}")
         lines.append("")
-        lines.append(f"  RESPONSE:")
-        lines.append(f"  {t.get('response', '')}")
-        lines.append("")
-        if t.get("reason"):
-            lines.append(f"  JUDGE: {t['reason']}")
+
+        for t in entry["turns"]:
+            lines.append(f"─── Round {t['round']} ({t.get('planner', '')}) "
+                         f"[score={t.get('score', '?'):.2f}] ───")
             lines.append("")
-        lines.append("")
+            lines.append(f"  PROMPT:")
+            lines.append(f"  {t.get('prompt', '')}")
+            lines.append("")
+            lines.append(f"  RESPONSE:")
+            lines.append(f"  {t.get('response', '')}")
+            lines.append("")
+            if t.get("reason"):
+                lines.append(f"  JUDGE: {t['reason']}")
+                lines.append("")
+            lines.append("")
 
     lines.append("=" * 70)
     lines.append("  End of Export")

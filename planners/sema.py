@@ -133,7 +133,7 @@ class SEMAPlanner(BasePlanner):
         """一次 LLM 调用完成反思+策略+生成+自检."""
 
         # 构建上下文
-        context = state.to_prompt_context()
+        context = state.to_prompt_context(self.config.max_history_turns)
 
         # AttackState 摘要 (Scheduler 维护, Planner 直接消费)
         attack_hint = self._attack_state_hint(state)
@@ -185,7 +185,7 @@ class SEMAPlanner(BasePlanner):
             instruction,
             system=SMART_PLANNER_SYSTEM,
             temperature=0.8,
-            max_tokens=600,
+            max_tokens=self.config.attack_max_tokens,
         )
 
         return self._parse_json(result)

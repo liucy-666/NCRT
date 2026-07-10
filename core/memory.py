@@ -40,12 +40,12 @@ class ConversationState:
     def recent_history(self, n: int = 5) -> List[ConversationTurn]:
         return self.history[-n:]
 
-    def to_prompt_context(self) -> str:
+    def to_prompt_context(self, max_turns: int = 10) -> str:
         """转为 prompt 可用的上下文文本."""
         if not self.history:
             return "No history yet."
         lines = []
-        for t in self.history[-10:]:
+        for t in self.history[-max_turns:]:
             role = "Attacker" if t.role == "attacker" else "Victim"
             content = t.content[:300]
             score_str = f" [score={t.score:.2f}]" if t.score is not None else ""

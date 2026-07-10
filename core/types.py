@@ -48,10 +48,10 @@ class AttackResult:
 class PlannerConfig:
     """Planner 通用配置"""
     max_rounds: int = 20
-    success_threshold: float = 0.5
+    success_threshold: float = 0.7
     failure_threshold: float = 0.3
     # Generator 参数
     attack_temperature: float = 0.8
-    attack_max_tokens: int = 512
+    attack_max_tokens: int = 1000
     # Memory 参数
-    max_history_turns: int = 10
+    max_history_turns: int = 2

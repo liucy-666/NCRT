@@ -53,7 +53,7 @@ pip install requests flask pywebview
 
 # 如果你想通过Ollama来进行测试，你可以拉取以下默认模型：
 ollama pull llama2-uncensored:7b       # 攻击模型
-ollama pull llama3.2:latest            # 受害者模型
+ollama pull llama3.1:latest            # 受害者模型
 ollama pull nomic-embed-text           # Embedding (可选)
 ```
 
@@ -110,7 +110,7 @@ R01=0.05 [p=0.10] R02=0.12 [p=0.18] R03=0.28 [p=0.35]
 | `--scale` | str | `10` | 批量数量, `整数` 或 `all` |
 | `--threshold` | float | `0.5` | 越狱成功分数阈值 |
 | `--attack-model` | str | `llama2-uncensored:7b` | 攻击模型名称 |
-| `--victim-model` | str | `llama3.2:latest` | 受害者模型名称 |
+| `--victim-model` | str | `llama3.1:latest` | 受害者模型名称 |
 | `--judge-model` | str | `deepseek-chat` | Judge 模型名称 |
 | `--judge-key` | str | 内置 Key | Judge API Key |
 | `--attack-base-url` | str | — | 攻击模型 API 端点 |
@@ -134,7 +134,7 @@ config = PlannerConfig(max_rounds=15, success_threshold=0.5)
 
 generator = Generator(
     model="deepseek-chat",
-    victim_model="llama3.2:latest",
+    victim_model="llama3.1:latest",
     attack_base_url="https://api.deepseek.com/v1",
     attack_api_key="sk-your-key",
 )

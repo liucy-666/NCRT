@@ -363,7 +363,7 @@ class Judge:
         # 三个智能体依次打分 (顺序执行, 不并行)
         for name, system_prompt in self.JUDGE_PERSPECTIVES.items():
             result = gen.generate(base, system=system_prompt,
-                                  temperature=0.3, max_tokens=400)
+                                  temperature=0.3, max_tokens=1000)
             s, r = self._parse(result, scale_1_to_10=True)  # 1-10 评分归一化到 0-1
             scores_01.append(s)
             reasons.append(f"[{name}] {r}")  # 带视角标签, 方便阅读
@@ -478,7 +478,7 @@ class Judge:
             # 注意: 这里用 JUDGE_SYSTEM + perspective 组合成完整系统提示
             sys = self.JUDGE_SYSTEM + "\n\n" + perspective
             result = gen.generate(base, system=sys,
-                                  temperature=0.3, max_tokens=300)
+                                  temperature=0.3, max_tokens=1000)
             s, r = self._parse(result, scale_1_to_10=False)  # 0-1 量纲, 无需转换
             scores.append(s)
             reasons.append(f"[{name}] {r}")

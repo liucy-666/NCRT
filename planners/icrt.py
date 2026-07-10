@@ -186,7 +186,7 @@ class ICRTPlanner(BasePlanner):
             f"Analyze this input: \"{goal}\"",
             system=ICRT_INTENT_SYSTEM,
             temperature=0.3,
-            max_tokens=200,
+            max_tokens=500,
         )
         data = self._parse_json(result)
         intent = data.get("structural_intent", goal)
@@ -206,7 +206,7 @@ class ICRTPlanner(BasePlanner):
             decompose_prompt,
             system=ICRT_DECOMPOSE_SYSTEM.replace("{k}", str(k)),
             temperature=0.8,
-            max_tokens=500,
+            max_tokens=self.config.attack_max_tokens,
         )
         data = self._parse_json(result)
         concepts = data.get("sub_concepts", [])
@@ -247,7 +247,7 @@ class ICRTPlanner(BasePlanner):
         """Stage 2.2: 模板匹配 — 生成最终攻击 prompt."""
         concepts_text = "\n".join(f"- {c}" for c in selected)
 
-        context = state.to_prompt_context() if state.history else "First attempt."
+        context = state.to_prompt_context(self.config.max_history_turns) if state.history else "First attempt."
         if round_num == 1:
             strategy = "Use the Academic Research template. Start broad."
         elif state.best_score > 0.3:

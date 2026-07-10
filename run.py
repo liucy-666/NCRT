@@ -50,7 +50,7 @@ parser.add_argument("--beam", type=int, default=3,
 parser.add_argument("--branch", type=int, default=3,
                     help="TAP branch factor")
 parser.add_argument("--attack-model", type=str, default="llama2-uncensored:7b")
-parser.add_argument("--victim-model", type=str, default="llama3.2:latest")
+parser.add_argument("--victim-model", type=str, default="llama3.1:latest")
 parser.add_argument("--judge-model", type=str, default="",
                     help="Judge 模型名称 (留空则使用 attack-model)")
 parser.add_argument("--judge-base-url", type=str, default="",
@@ -188,7 +188,7 @@ def _run_one_parallel(task):
 def run_compare(goals: List[Dict], n: int) -> List[Dict]:
     """四种 Planner 在同一批目标上对比（支持并行）."""
     all_results = []
-    planner_names = [k for k in PLANNERS if k != "graph"]
+    planner_names = list(PLANNERS.keys())  # 包含 graph
     workers = args.workers
     mode = f"{workers} threads" if workers > 1 else "serial"
 
