@@ -19,14 +19,15 @@ class Generator:
     """攻击模型客户端。所有 Planner 共用。"""
 
     def __init__(self, model: str = "deepseek-chat",
-                 base_url: str = "https://api.deepseek.com",
-                 api_key: str = "sk-xxx",
+                 base_url: str = "http://127.0.0.1:11434/v1",
+                 api_key: str = "ollama",
                  backend: str = "api",
                  victim_model: str = "llama3.1:latest",
                  attack_base_url: str = "",
                  attack_api_key: str = "",
                  victim_base_url: str = "",
-                 victim_api_key: str = ""):
+                 victim_api_key: str = "",
+                 max_retries: int = 3):
         self.model = model
         self.victim_model = victim_model
         self.base_url = base_url
@@ -36,6 +37,7 @@ class Generator:
         self.attack_api_key = attack_api_key or api_key
         self.victim_base_url = victim_base_url or base_url
         self.victim_api_key = victim_api_key or api_key
+        self.max_retries = max_retries
         self._cache: dict = {}
         self._cache_hits = 0
         self._victim_calls = 0
@@ -105,8 +107,8 @@ class Generator:
                     reasoning_effort: str = "") -> str:
         import requests, json
 
-        url = base_url or self.base_url
-        key = api_key or self.api_key
+        url = base_url or self.base_url or "http://127.0.0.1:11434/v1"
+        key = api_key or self.api_key or "ollama"
         is_ds = "deepseek" in url.lower()
 
         # ── DeepSeek Beta: 对话前缀续写 ──
@@ -150,27 +152,59 @@ class Generator:
             body["reasoning_effort"] = effort
             body["extra_body"] = {"thinking": {"type": "enabled"}}
 
-        try:
-            resp = requests.post(
-                f"{url}/chat/completions",
-                json=body,
-                headers={"Authorization": f"Bearer {key}"},
-                timeout=120,
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                choice = data["choices"][0]
-                msg = choice.get("message", {})
-                # 优先取 content；思考模式下 reasoning_content 独立存于 msg
-                content = msg.get("content", "")
-                if content:
-                    return content
-                # content 为空时（JSON Output 偶发），尝试从 reasoning_content 提取
-                rc = msg.get("reasoning_content", "")
-                return rc if rc else f"[WARN: empty content]"
-            return f"[ERROR: {resp.status_code}]"
-        except Exception as e:
-            return f"[ERROR: {e}]"
+        # ── 重试逻辑 (仅对瞬态错误重试, 永久错误立即失败) ──
+        import time as _time
+        import requests as _requests
+        last_error = ""
+        for attempt in range(self.max_retries):
+            try:
+                resp = requests.post(
+                    f"{url}/chat/completions",
+                    json=body,
+                    headers={"Authorization": f"Bearer {key}"},
+                    timeout=120,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    choice = data["choices"][0]
+                    msg = choice.get("message", {})
+                    content = msg.get("content", "")
+                    if content:
+                        return content
+                    rc = msg.get("reasoning_content", "")
+                    return rc if rc else f"[WARN: empty content]"
+
+                # ── 状态码分类 ──
+                if resp.status_code in (429, 500, 502, 503, 504):
+                    # 瞬态错误 — 重试
+                    last_error = f"HTTP {resp.status_code}"
+                elif resp.status_code in (401, 403):
+                    # 认证错误 — 不重试
+                    return f"[ERROR: {resp.status_code} (auth/perm — check API key)]"
+                elif resp.status_code == 400:
+                    # 请求格式错误 — 不重试
+                    detail = resp.text[:200] if resp.text else ""
+                    return f"[ERROR: 400 Bad Request {detail}]"
+                else:
+                    # 其他状态码 — 不重试
+                    return f"[ERROR: {resp.status_code}]"
+
+            except (_requests.exceptions.ConnectionError,
+                    _requests.exceptions.Timeout,
+                    _requests.exceptions.SSLError) as e:
+                last_error = type(e).__name__
+            except Exception as e:
+                # 未知异常 — 不重试
+                return f"[ERROR: {e}]"
+
+            # 退避延迟: 1s → 2s → 4s
+            if attempt < self.max_retries - 1:
+                delay = 2 ** attempt
+                _time.sleep(delay)
+                print(f"  [RETRY] {last_error}, attempt {attempt+2}/{self.max_retries} "
+                      f"(after {delay}s)", flush=True)
+
+        return f"[ERROR: {last_error} after {self.max_retries} retries]"
 
     def stats(self) -> dict:
         return {"cache_hits": self._cache_hits, "cache_size": len(self._cache)}

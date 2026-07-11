@@ -202,8 +202,10 @@ class Judge:
         if self._generator is None:
             from core.generator import Generator
             self._generator = Generator(
-                model=self.model, base_url=self.base_url,
-                api_key=self.api_key, backend="api"
+                model=self.model,
+                base_url=self.base_url or "http://127.0.0.1:11434/v1",
+                api_key=self.api_key or "ollama",
+                backend="api"
             )
         return self._generator
 

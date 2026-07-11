@@ -38,7 +38,7 @@ def _load_dataset(limit: int = None) -> list:
     path = os.path.join(PROJECT_DIR, "data", "harmful_prompts.json")
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    items = [p for p in data if p.get("source") == "forbidden_question_set"]
+    items = data  # 全量有害数据，不做 source 过滤
     if limit and limit < len(items):
         import random
         random.seed(42)
@@ -59,7 +59,7 @@ def _parse_scale(scale_str) -> int:
     try:
         return int(s)
     except (ValueError, TypeError):
-        return 10
+        return 5
 
 
 def _write_goal_result(uid: str, goal: str, planner_name: str, entry: dict):
@@ -229,6 +229,7 @@ def _run_attack_stream(session_id: str, params: dict):
             base_url=params.get("judge_base_url", ""),
             api_key=params.get("judge_key", ""),
         )
+        judge._hooked = False  # 新 session 清除旧 hook 标记
 
         # ── 确定 goals 和 planners 列表 ──
         if mode == "single":
@@ -364,14 +365,19 @@ def _result_to_dict(result: AttackResult, planner_name: str, goal: str) -> dict:
 
 
 def _patch_planner_stream(planner, emit, session_id: str = ""):
-    """给 Planner 打补丁，每轮评估后推送事件；同时检查 stop 标志."""
-    original_judge_evaluate = planner.judge.evaluate
+    """给 Planner 的 judge.evaluate 打补丁（只装一次），每轮推送前端；同时检查 stop."""
+    if getattr(planner.judge, "_hooked", False):
+        return  # 已装过 hook，防止跨 goal 堆叠
+    original_evaluate = planner.judge.evaluate
+    _round_counter = [0]  # mutable counter 跨闭包共享
 
     def hooked_evaluate(goal, prompt, response):
         if session_id and _active_sessions.get(session_id, {}).get("stop"):
             raise _StopAttack()
-        score, reason = original_judge_evaluate(goal, prompt, response)
+        score, reason = original_evaluate(goal, prompt, response)
+        _round_counter[0] += 1
         emit("round", {
+            "round": _round_counter[0],
             "prompt": prompt[:200],
             "response": response[:200],
             "score": score,
@@ -381,6 +387,7 @@ def _patch_planner_stream(planner, emit, session_id: str = ""):
         return score, reason
 
     planner.judge.evaluate = hooked_evaluate
+    planner.judge._hooked = True
 
 
 def _cleanup_session(session_id: str):

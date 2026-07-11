@@ -264,7 +264,7 @@ def main():
     if args.compare:
         with open(DATA_PATH, "r", encoding="utf-8") as f:
             all_prompts = json.load(f)
-        test_set = [p for p in all_prompts if p.get("source") == "forbidden_question_set"]
+        test_set = all_prompts  # 全量有害数据，不做 source 过滤
         n = min(int(args.scale), len(test_set)) if args.scale != "all" else len(test_set)
         import random
         random.seed(args.seed)
@@ -302,7 +302,7 @@ def main():
     # ── Batch mode ──
     with open(DATA_PATH, "r", encoding="utf-8") as f:
         all_prompts = json.load(f)
-    test_set = [p for p in all_prompts if p.get("source") == "forbidden_question_set"]
+    test_set = all_prompts  # 全量有害数据，不做 source 过滤
     n = min(int(args.scale), len(test_set)) if args.scale != "all" else len(test_set)
     import random
     random.seed(args.seed)
