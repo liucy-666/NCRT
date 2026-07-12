@@ -52,6 +52,6 @@ class PlannerConfig:
     failure_threshold: float = 0.3
     # Generator 参数
     attack_temperature: float = 0.8
-    attack_max_tokens: int = 1000
+    attack_max_tokens: int = 4096
     # Memory 参数
     max_history_turns: int = 2

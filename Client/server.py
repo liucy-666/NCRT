@@ -19,7 +19,7 @@ sys.path.insert(0, PROJECT_DIR)
 from flask import Flask, request, jsonify, Response, send_from_directory
 from core import Generator, Judge, PlannerConfig
 from core.types import AttackResult
-from planners import get_planner, PLANNERS
+from planners import PLANNERS
 from scheduler.scheduler import AttackScheduler, SchedulerConfig
 
 app = Flask(__name__, static_folder="static", static_url_path="")
@@ -90,77 +90,49 @@ def _is_goal_done(uid: str) -> bool:
 def _run_single_attack(session_id: str, goal: str, planner_name: str,
                        config, generator, judge, emit,
                        uid: str = "") -> dict:
-    """执行单条 goal 的完整攻击。单 goal / batch / compare 共用此函数。
+    """所有攻击统一走 Graph Scheduler。
 
-    完全封装了 graph Scheduler 和普通 Planner 两条路径，
-    包含 on_round 回调、AttackState 推送、_StopAttack 检测。
-    导出数据追加到 _export_data[session_id] 列表，不会被覆盖。
-    每跑完一条 goal 立即写入 output/{uid}_{goal}.json，支持断点续传。
+    单一策略 = roster 缩小为 [planner_name]，TS/切换/AttackState 全部复用。
+    多策略 (graph) = 完整 6-Planner roster。
     """
-    # ── Graph 路径 ──
+    # 确定 roster: "graph" → 全量 6 Planner, 其他 → 单一 Planner
     if planner_name == "graph":
-        sc = SchedulerConfig(
-            max_llm_calls=config.max_rounds,
-            success_threshold=config.success_threshold,
-        )
-        export_turns = []
+        roster = ["crescendo", "pair", "tap", "sema", "icrt", "safe2harm"]
+    else:
+        roster = [planner_name]
 
-        def on_round(rnum, pname, prompt, resp, score, reason, attack_state=None):
-            if _active_sessions.get(session_id, {}).get("stop"):
-                raise _StopAttack()
-            export_turns.append({
-                "round": rnum, "planner": pname,
-                "prompt": prompt, "response": resp,
-                "score": score, "reason": reason,
-            })
-            emit("round", {
-                "round": rnum, "planner": pname,
-                "prompt": prompt[:200], "response": resp[:200],
-                "score": score, "reason": reason[:200],
-                "attack_state": attack_state.to_dict() if attack_state else None,
-            })
+    sc = SchedulerConfig(
+        max_llm_calls=config.max_rounds,
+        success_threshold=config.success_threshold,
+        planner_roster=roster,
+        ts_experience_path=os.path.join(PROJECT_DIR, "data", "ts_bandit.json"),
+    )
+    export_turns = []
 
-        scheduler = AttackScheduler(config=sc, generator=generator, judge=judge,
-                                   on_round=on_round)
-        result = scheduler.attack(goal)
-        entry = {
-            "uid": uid, "goal": goal,
-            "success": result.success,
-            "best_score": result.best_score,
-            "planner": "graph",
-            "turns": export_turns,
-            "metadata": result.metadata,
-        }
-        _export_data.setdefault(session_id, []).append(entry)
-        _write_goal_result(uid, goal, "graph", entry)
-        emit("result", _result_to_dict(result, "graph", goal))
-        return {
-            "uid": uid, "goal": goal[:100],
-            "success": result.success,
-            "best_score": result.best_score,
-            "rounds": result.total_rounds,
-        }
+    def on_round(rnum, pname, prompt, resp, score, reason, attack_state=None):
+        if _active_sessions.get(session_id, {}).get("stop"):
+            raise _StopAttack()
+        export_turns.append({
+            "round": rnum, "planner": pname,
+            "prompt": prompt, "response": resp,
+            "score": score, "reason": reason,
+        })
+        emit("round", {
+            "round": rnum, "planner": pname,
+            "prompt": prompt[:200], "response": resp[:200],
+            "score": score, "reason": reason[:200],
+            "attack_state": attack_state.to_dict() if attack_state else None,
+        })
 
-    # ── 普通 Planner 路径 ──
-    planner = get_planner(planner_name, config=config,
-                          generator=generator, judge=judge)
-    _patch_planner_stream(planner, emit, session_id)
-    result = planner.attack(goal)
+    scheduler = AttackScheduler(config=sc, generator=generator, judge=judge,
+                               on_round=on_round)
+    result = scheduler.attack(goal)
     entry = {
         "uid": uid, "goal": goal,
         "success": result.success,
         "best_score": result.best_score,
         "planner": planner_name,
-        "turns": [
-            {
-                "round": t.round_num,
-                "role": t.role,
-                "content": t.content,
-                "score": t.score,
-                "reason": t.judge_reason or "",
-            }
-            for t in (result.turns or [])
-        ],
+        "turns": export_turns,
         "metadata": result.metadata,
     }
     _export_data.setdefault(session_id, []).append(entry)
@@ -171,8 +143,6 @@ def _run_single_attack(session_id: str, goal: str, planner_name: str,
         "success": result.success,
         "best_score": result.best_score,
         "rounds": result.total_rounds,
-        "final_prompt": result.final_prompt[:200] if result.final_prompt else "",
-        "final_response": result.final_response[:200] if result.final_response else "",
     }
 
 
@@ -229,7 +199,6 @@ def _run_attack_stream(session_id: str, params: dict):
             base_url=params.get("judge_base_url", ""),
             api_key=params.get("judge_key", ""),
         )
-        judge._hooked = False  # 新 session 清除旧 hook 标记
 
         # ── 确定 goals 和 planners 列表 ──
         if mode == "single":
@@ -362,32 +331,6 @@ def _result_to_dict(result: AttackResult, planner_name: str, goal: str) -> dict:
             for t in (result.turns or [])
         ],
     }
-
-
-def _patch_planner_stream(planner, emit, session_id: str = ""):
-    """给 Planner 的 judge.evaluate 打补丁（只装一次），每轮推送前端；同时检查 stop."""
-    if getattr(planner.judge, "_hooked", False):
-        return  # 已装过 hook，防止跨 goal 堆叠
-    original_evaluate = planner.judge.evaluate
-    _round_counter = [0]  # mutable counter 跨闭包共享
-
-    def hooked_evaluate(goal, prompt, response):
-        if session_id and _active_sessions.get(session_id, {}).get("stop"):
-            raise _StopAttack()
-        score, reason = original_evaluate(goal, prompt, response)
-        _round_counter[0] += 1
-        emit("round", {
-            "round": _round_counter[0],
-            "prompt": prompt[:200],
-            "response": response[:200],
-            "score": score,
-            "reason": reason[:200],
-            "planner": getattr(planner, "name", "unknown"),
-        })
-        return score, reason
-
-    planner.judge.evaluate = hooked_evaluate
-    planner.judge._hooked = True
 
 
 def _cleanup_session(session_id: str):

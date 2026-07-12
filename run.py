@@ -31,8 +31,8 @@ from collections import defaultdict
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 
-from core import Generator, Judge, ConversationState, ExperienceMemory, PlannerConfig
-from planners import get_planner, PLANNERS
+from core import Generator, Judge, PlannerConfig
+from planners import PLANNERS
 
 
 parser = argparse.ArgumentParser(description="NCRT v3 — Pluggable LLM Red-Teaming Platform")
@@ -84,10 +84,17 @@ args = None  # will be set in __main__
 
 def run_one(planner_name: str, goal: str, category: str = "",
             config_overrides: dict = None) -> Dict[str, Any]:
-    """使用指定 Planner 攻击单个目标."""
-    config = PlannerConfig(
-        max_rounds=args.rounds,
+    """统一经 Graph Scheduler 攻击单个目标。单一策略 = roster 退化为 [planner_name]."""
+    from scheduler import AttackScheduler, SchedulerConfig
+
+    roster = (["crescendo", "pair", "tap", "sema", "icrt", "safe2harm"]
+              if planner_name == "graph" else [planner_name])
+
+    sc = SchedulerConfig(
+        max_llm_calls=args.rounds,
         success_threshold=args.threshold,
+        planner_roster=roster,
+        ts_experience_path=os.path.join(SCRIPT_DIR, "data", "ts_bandit.json"),
     )
     generator = Generator(model=args.attack_model, victim_model=args.victim_model,
                           attack_base_url=args.attack_base_url,
@@ -95,62 +102,31 @@ def run_one(planner_name: str, goal: str, category: str = "",
                           victim_base_url=args.victim_base_url,
                           victim_api_key=args.victim_api_key)
     judge = Judge(model=args.judge_model, base_url=args.judge_base_url, api_key=args.judge_key)
-    memory = ExperienceMemory()
 
-    # ── Graph Scheduler 模式 ──
-    if planner_name == "graph":
-        from scheduler import AttackScheduler, SchedulerConfig
-        sc = SchedulerConfig(
-            max_llm_calls=args.rounds * 3,
-            success_threshold=args.threshold,
-        )
-        scheduler = AttackScheduler(config=sc, generator=generator, judge=judge)
-        t0 = time.time()
-        result = scheduler.attack(goal)
-        elapsed = time.time() - t0
-        # 优先用 result.final_prompt，fallback 从图里取
-        graph_prompt = result.final_prompt
-        if not graph_prompt and result.metadata.get("best_node_id"):
-            best = scheduler._graph.get(result.metadata["best_node_id"])
-            if best and best.parent_id:
-                for e in scheduler._graph.edges.get(best.parent_id, []):
-                    if e.to_id == best.node_id:
-                        graph_prompt = e.prompt
-                        break
-
-        return {
-            "planner": "graph",
-            "goal": goal[:100], "category": category,
-            "success": result.success,
-            "best_score": result.best_score,
-            "rounds": result.total_rounds,
-            "final_prompt": graph_prompt,
-            "final_response": result.final_response[:300],
-            "elapsed": elapsed,
-            "metadata": result.metadata,
-        }
-
-    kwargs = {"config": config, "generator": generator,
-              "judge": judge, "memory": memory}
-    if config_overrides:
-        kwargs.update(config_overrides)
-
-    planner = get_planner(planner_name, **kwargs)
-
+    scheduler = AttackScheduler(config=sc, generator=generator, judge=judge)
     t0 = time.time()
-    result = planner.attack(goal)
+    result = scheduler.attack(goal)
     elapsed = time.time() - t0
+
+    graph_prompt = result.final_prompt
+    if not graph_prompt and result.metadata.get("best_node_id"):
+        best = scheduler._graph.get(result.metadata["best_node_id"])
+        if best and best.parent_id:
+            for e in scheduler._graph.edges.get(best.parent_id, []):
+                if e.to_id == best.node_id:
+                    graph_prompt = e.prompt
+                    break
 
     return {
         "planner": planner_name,
-        "goal": goal[:100],
-        "category": category,
+        "goal": goal[:100], "category": category,
         "success": result.success,
         "best_score": result.best_score,
         "rounds": result.total_rounds,
-        "final_prompt": result.final_prompt[:300],
+        "final_prompt": graph_prompt,
         "final_response": result.final_response[:300],
         "elapsed": elapsed,
+        "metadata": result.metadata,
     }
 
 

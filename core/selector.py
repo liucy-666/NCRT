@@ -52,21 +52,64 @@ class PhaseStratifiedBandit:
         base = f"{planner}|{goal_tier}|{phase}"
         return f"{base}|{stage}" if stage else base
 
+    # ── 跨攻击经验持久化 ──
+
+    def save(self, path: str) -> int:
+        """保存 Beta 参数到 JSON 文件。返回保存的 key 数量。"""
+        import json, os
+        os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+        data = {k: [round(a, 3), round(b, 3)] for k, (a, b) in self._params.items()}
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return len(data)
+
+    def load(self, path: str) -> int:
+        """从 JSON 文件加载 Beta 参数。返回加载的 key 数量。"""
+        import json, os
+        if not os.path.exists(path):
+            return 0
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        for key, (alpha, beta) in data.items():
+            self._params[key] = (float(alpha), float(beta))
+        return len(data)
+
     def sample(self, planner: str, goal_tier: str, phase: str,
                stage: str = "") -> float:
         alpha, beta = self._params.get(
             self._key(planner, goal_tier, phase, stage), (1.0, 1.0))
         return random.betavariate(alpha, beta)
 
-    def update(self, planner: str, goal_tier: str, phase: str,
-               improved: bool, stage: str = ""):
+    def update_continuous(self, planner: str, goal_tier: str, phase: str,
+                          reward: float, stage: str = ""):
+        """连续奖励: reward ∈ [0, 1].
+
+        α += reward      (越接近 1 → 越成功)
+        β += (1-reward)  (越接近 0 → 越失败)
+        """
         key = self._key(planner, goal_tier, phase, stage)
         alpha, beta = self._params.get(key, (1.0, 1.0))
-        if improved:
-            alpha += 1.0
-        else:
-            beta += 1.0
+        alpha += max(0.0, min(1.0, reward))
+        beta += max(0.0, min(1.0, 1.0 - reward))
         self._params[key] = (alpha, beta)
+
+    def decay_all(self, rate: float = 0.95):
+        """全局时间衰减: 所有参数向 (1,1) 回归.
+
+        α' = 1 + (α-1) * rate
+        β' = 1 + (β-1) * rate
+        旧经验逐渐淡出，最近 ~20 条 goal 主导决策.
+        """
+        if rate >= 1.0:
+            return
+        for key in list(self._params.keys()):
+            alpha, beta = self._params[key]
+            alpha = 1.0 + (alpha - 1.0) * rate
+            beta = 1.0 + (beta - 1.0) * rate
+            if alpha <= 1.01 and beta <= 1.01:
+                del self._params[key]  # 衰减到接近无信息 → 删除
+            else:
+                self._params[key] = (alpha, beta)
 
     def get_stats(self, planner: str, goal_tier: str, phase: str,
                   stage: str = "") -> Dict:
@@ -74,25 +117,27 @@ class PhaseStratifiedBandit:
         alpha, beta = self._params.get(key, (1.0, 1.0))
         trials = alpha + beta - 2
         return {
-            "improvements": int(alpha - 1),
-            "stalls": int(beta - 1),
+            "alpha": round(alpha, 2),
+            "beta": round(beta, 2),
             "trials": int(trials),
-            "improve_rate": (alpha - 1) / max(1, trials),
+            "mean": alpha / max(1, alpha + beta),
         }
 
     def all_stats(self) -> Dict:
         result = {}
         for key, (alpha, beta) in self._params.items():
             parts = key.split("|")
-            if len(parts) == 3:
-                p, gt, ph = parts
+            if len(parts) >= 3:
+                p, gt, ph = parts[0], parts[1], parts[2]
+                posture = parts[3] if len(parts) >= 4 else "-"
                 trials = alpha + beta - 2
-                result.setdefault(gt, {}).setdefault(ph, {})[p] = {
-                    "improvements": int(alpha - 1),
-                    "stalls": int(beta - 1),
+                stat = {
+                    "alpha": round(alpha, 2),
+                    "beta": round(beta, 2),
                     "trials": int(trials),
-                    "improve_rate": (alpha - 1) / max(1, trials),
+                    "mean": alpha / max(1, alpha + beta),
                 }
+                result.setdefault(gt, {}).setdefault(ph, {}).setdefault(p, {})[posture] = stat
         return result
 
 
@@ -108,15 +153,26 @@ class ThompsonSelector:
     def __init__(self):
         self.bandit = PhaseStratifiedBandit()
 
+    # ── 持久化 ──
+
+    def save(self, path: str) -> int:
+        """保存 TS 经验到文件。"""
+        return self.bandit.save(path)
+
+    def load(self, path: str) -> int:
+        """从文件加载 TS 经验。"""
+        return self.bandit.load(path)
+
     # ── 选择 ──
 
     def select(self, planners: List[str], goal_tier: str,
                round_num: int = 1, top_k: int = 1,
                stage: str = "") -> List[str]:
         phase = get_phase(round_num)
-        total = self._total_trials(goal_tier, phase, stage)
+        total = self._total_trials(planners, goal_tier, phase, stage)
 
         if total < len(planners) * 2:
+            # 数据不足: 6 个 Planner 等权重随机探索
             shuffled = list(planners)
             random.shuffle(shuffled)
             return shuffled[:top_k]
@@ -127,87 +183,55 @@ class ThompsonSelector:
         samples.sort(key=lambda x: -x[1])
         return [p for p, _ in samples[:top_k]]
 
-    # ── 逐轮 reward ──
+    # ── 从黑板学习 (唯一活跃的奖励入口) ──
 
-    def reward_round(self, planner: str, goal_tier: str, round_num: int,
-                     score: float, best_before: float, stage: str = ""):
-        phase = get_phase(round_num)
-        improved = score > best_before
-        self.bandit.update(planner, goal_tier, phase, improved, stage)
+    def reward_from_blackboard(self, planner_calls: dict,
+                                max_progress: float, goal_tier: str,
+                                posture: str, decay: float = 0.95):
+        """从战术黑板读取的信号更新 TS 参数.
 
-    # ── Episode 级 reward ──
+        Args:
+          planner_calls: {planner_name: [(round_num, score), ...]}
+          max_progress:  AttackState.max_progress (最终突破分数, 0-1)
+          goal_tier:     难度分级 (normal/hard/extreme)
+          posture:       最终受害者姿态
+          decay:         全局时间衰减率 (0.95 → 最近 ~20 条主导)
 
-    def reward_episode(self, planner: str, goal_tier: str,
-                       scores: List[Tuple[int, float]]):
-        """scores: [(round_num, score), ...]"""
-        best_so_far = 0.0
-        for rnd, score in scores:
-            phase = get_phase(rnd)
-            improved = score > best_so_far
-            if improved:
-                best_so_far = score
-            self.bandit.update(planner, goal_tier, phase, improved)
-
-    # ── 切换判断 ──
-
-    def should_switch(self, current_planner: str, goal_tier: str,
-                      round_num: int, score: float,
-                      best_score: float, roster: List[str],
-                      consecutive_improvements: int = 0
-                      ) -> Tuple[bool, str, str]:
+        设计:
+          1. 先全局衰减 → 旧经验淡出
+          2. 对攻击链上每个 Planner, 奖励 = max_progress × 位置权重
+             - 越靠近链尾 (接近突破) → 权重越高 (0.5-1.0)
+             - 连续奖励 α += reward, β += (1-reward)
         """
-        纯统计推断: 基于历史数据判断当前策略是否劣于替代策略。
+        # 1. 全局时间衰减
+        if decay < 1.0:
+            self.bandit.decay_all(decay)
 
-        注意: 调用方需要自行检查 per-strategy warmup + 最低步数。
-        此方法仅做纯粹的 TS 统计推断，不做任何强制判断（如 round≥6 强制切）。
-        """
-        phase = get_phase(round_num)
+        if not planner_calls:
+            return
 
-        # 高分继续
-        if score >= 0.7:
-            return False, "", current_planner
+        # 2. 攻击链排序 (按轮数)
+        chain = sorted(planner_calls.items(),
+                       key=lambda kv: max(r for r, _ in kv[1]) if kv[1] else 0)
+        n = len(chain)
+        if n == 0:
+            return
 
-        # 太早不切
-        if round_num < 3:
-            return False, "", current_planner
-
-        # 稳步前进保护
-        if consecutive_improvements >= 2:
-            return False, "", current_planner
-
-        # 需要足够数据
-        self_stats = self.bandit.get_stats(current_planner, goal_tier, phase)
-        if self_stats["trials"] < 2:
-            return False, "", current_planner
-
-        own_rate = self_stats["improve_rate"]
-
-        # 自身推进率还行就不切
-        if own_rate >= 0.3:
-            return False, "", current_planner
-
-        # 找最佳替代
-        best_alt = current_planner
-        best_alt_rate = 0.0
-        for alt in roster:
-            if alt == current_planner:
+        for i, (planner, rounds) in enumerate(chain):
+            if not rounds:
                 continue
-            alt_stats = self.bandit.get_stats(alt, goal_tier, phase)
-            if alt_stats["trials"] >= 2:
-                if alt_stats["improve_rate"] > best_alt_rate:
-                    best_alt_rate = alt_stats["improve_rate"]
-                    best_alt = alt
+            # 位置权重: 链尾 1.0, 链首 0.5, 线性插值
+            position_weight = 0.5 + 0.5 * (i + 1) / n
+            reward = max_progress * position_weight
 
-        # 切换条件: 自身推进率差 + 替代明显更好 + 当前轮确认停滞
-        stalled = score <= best_score
-        if own_rate < 0.3 and best_alt_rate > 0.4 and stalled:
-            return True, (
-                f"Phase [{phase}]: {current_planner} "
-                f"improve_rate={own_rate:.0%} "
-                f"vs {best_alt} improve_rate={best_alt_rate:.0%}"
-            ), best_alt
+            # 对每一轮, 写入对应 phase 和 posture
+            for rnd, score in rounds:
+                phase = get_phase(rnd)
+                self.bandit.update_continuous(planner, goal_tier, phase,
+                                              reward, posture)
 
-        return False, "", current_planner
+            print(f"  [TS learn] {planner}: pos_w={position_weight:.2f} "
+                  f"reward={reward:.3f} (max_p={max_progress:.2f})", flush=True)
 
     # ── 统计 ──
 
@@ -220,7 +244,7 @@ class ThompsonSelector:
             print("  [TS] No data collected yet.")
             return
         print(f"\n  {'='*80}")
-        print(f"  PHASE-STRATIFIED THOMPSON SAMPLING STATISTICS")
+        print(f"  PHASE-STRATIFIED THOMPSON SAMPLING (posture-aware)")
         print(f"  {'='*80}")
         for gt in sorted(stats):
             print(f"\n  [{gt.upper()}]")
@@ -229,19 +253,18 @@ class ThompsonSelector:
                     continue
                 rng = {"early": "1-3", "mid": "4-8", "late": "9+"}[phase]
                 print(f"\n    --- {phase.upper()} (rounds {rng}) ---")
-                print(f"    {'Planner':<15s} {'Impr':>5s} {'Stall':>6s} "
-                      f"{'Total':>6s} {'Rate':>7s}")
-                print(f"    {'-'*15} {'-'*5} {'-'*6} {'-'*6} {'-'*7}")
-                for p in stats[gt][phase]:
-                    s = stats[gt][phase][p]
-                    print(f"    {p:<15s} {s['improvements']:>4d}  "
-                          f"{s['stalls']:>5d}  {s['trials']:>5d}  "
-                          f"{s['improve_rate']:>6.1%}")
+                print(f"    {'Planner':<12s} {'Posture':<16s} {'Alpha':>6s} {'Beta':>6s} {'Mean':>6s}")
+                print(f"    {'-'*12} {'-'*16} {'-'*6} {'-'*6} {'-'*6}")
+                for p in sorted(stats[gt][phase]):
+                    for posture, s in sorted(stats[gt][phase][p].items()):
+                        if s["trials"] > 0:
+                            print(f"    {p:<12s} {posture:<16s} "
+                                  f"{s['alpha']:>6.2f} {s['beta']:>6.2f} {s['mean']:>6.3f}")
         print(f"\n  {'='*80}")
 
-    def _total_trials(self, goal_tier: str, phase: str, stage: str = "") -> int:
+    def _total_trials(self, planners: list, goal_tier: str, phase: str, stage: str = "") -> int:
         total = 0
-        for p in ["crescendo", "pair", "tap", "sema", "icrt", "safe2harm"]:
+        for p in planners:
             s = self.bandit.get_stats(p, goal_tier, phase, stage)
             total += s["trials"]
         return total

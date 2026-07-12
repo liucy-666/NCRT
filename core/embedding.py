@@ -74,6 +74,77 @@ class Embedder:
         self._add_to_cache(key, vec)
         return vec
 
+    def embed_batch(self, texts: List[str], max_chars: int = 2000) -> List[List[float]]:
+        """批量嵌入多个文本。Ollama 原生 /api/embed 支持数组输入，一次 API 调用完成。
+
+        Args:
+          texts:     文本列表
+          max_chars: 每个文本的最大截断长度
+
+        Returns:
+          与 texts 等长的 embedding 列表。失败的项返回空列表 (可被 cosine 安全处理).
+        """
+        if not texts:
+            return []
+
+        results = [None] * len(texts)
+        uncached_indices = []
+        uncached_texts = []
+
+        # 1. 先查缓存
+        for i, text in enumerate(texts):
+            if not text:
+                results[i] = []
+                continue
+            key = self._cache_key(text)
+            if key in self._cache:
+                self._hits += 1
+                results[i] = self._cache[key]
+            else:
+                uncached_indices.append(i)
+                uncached_texts.append(text[:max_chars])
+
+        # 2. 批量请求 Ollama 原生 API
+        if uncached_texts:
+            try:
+                import requests
+                resp = requests.post(
+                    f"{self.base_url.rstrip('/v1')}/api/embed",
+                    json={"model": self.model, "input": uncached_texts},
+                    timeout=self.timeout * 2,  # 批量稍长超时
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    embeddings = data.get("embeddings", [])
+                    for j, vec in enumerate(embeddings):
+                        if j < len(uncached_indices):
+                            idx = uncached_indices[j]
+                            results[idx] = vec
+                            self._misses += 1
+                            key = self._cache_key(uncached_texts[j])
+                            self._add_to_cache(key, vec)
+                else:
+                    # 回退: 逐个调用
+                    for j, idx in enumerate(uncached_indices):
+                        vec = self._ollama_embed(uncached_texts[j])
+                        if vec is None:
+                            vec = self._fallback_embed(uncached_texts[j])
+                            self._fallback_count += 1
+                        results[idx] = vec
+                        self._misses += 1
+            except Exception:
+                # 回退: 逐个调用
+                for j, idx in enumerate(uncached_indices):
+                    vec = self._ollama_embed(uncached_texts[j])
+                    if vec is None:
+                        vec = self._fallback_embed(uncached_texts[j])
+                        self._fallback_count += 1
+                    results[idx] = vec
+                    self._misses += 1
+
+        # 3. 确保所有项都有值
+        return [r if r is not None else [] for r in results]
+
     def similarity(self, text_a: str, text_b: str) -> float:
         """计算两段文本的余弦相似度。"""
         return self.cosine(self.embed(text_a), self.embed(text_b))

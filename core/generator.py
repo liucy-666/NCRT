@@ -52,7 +52,7 @@ class Generator:
     # ═══════════════════════════════════════════════════════════════
 
     def generate(self, prompt: str, system: str = "",
-                 temperature: float = 0.8, max_tokens: int = 1000,
+                 temperature: float = 0.8, max_tokens: int = 4096,
                  bypass_cache: bool = False,
                  prefix: str = "",
                  json_mode: bool = False,
@@ -79,7 +79,7 @@ class Generator:
         return result
 
     def call_victim(self, prompt: str, temperature: float = 0.7,
-                    max_tokens: int = 1000) -> str:
+                    max_tokens: int = 4096) -> str:
         """调用受害者模型."""
         self._victim_calls += 1
         return self._call_model(self.victim_model, prompt, system="",

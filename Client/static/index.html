@@ -112,12 +112,11 @@ select { cursor:pointer; }
 }
 
 /* stage badge colors */
-.stage-initial { background:rgba(110,118,129,.15); color:var(--text-dim); }
-.stage-probing { background:rgba(88,166,255,.15); color:var(--accent); }
-.stage-context_building { background:rgba(163,113,247,.15); color:var(--purple); }
-.stage-trust_established { background:rgba(210,153,29,.15); color:var(--yellow); }
-.stage-exploiting { background:rgba(248,81,73,.15); color:var(--red); }
-.stage-jailbroken { background:rgba(63,185,80,.15); color:var(--green); }
+.stage-hard_block { background:rgba(248,81,73,.15); color:var(--red); }
+.stage-soft_evasion { background:rgba(210,153,29,.15); color:var(--yellow); }
+.stage-playing_role { background:rgba(88,166,255,.15); color:var(--accent); }
+.stage-yielding { background:rgba(63,185,80,.15); color:var(--green); }
+.stage-unknown { background:rgba(110,118,129,.15); color:var(--text-dim); }
 
 #as-right .as-module { margin-bottom:14px; }
 #as-right .as-module-title {
@@ -313,7 +312,7 @@ async function startAttack() {
   document.getElementById("status-text").textContent = "Starting...";
   document.getElementById("as-right").classList.add("visible");
   document.getElementById("as-stage").textContent = "waiting";
-  document.getElementById("as-stage").className = "stage-initial";
+  document.getElementById("as-stage").className = "stage-unknown";
   document.getElementById("as-body").innerHTML =
     '<div class="as-field"><span class="as-fname" style="color:var(--text-dim);">等待首轮数据...</span></div>';
   document.getElementById("content").innerHTML =
@@ -369,7 +368,7 @@ function handleEvent(event, data) {
         rounds = []; finalResult = null;
         renderProgress(data);
         document.getElementById("as-stage").textContent = "waiting";
-        document.getElementById("as-stage").className = "stage-initial";
+        document.getElementById("as-stage").className = "stage-unknown";
         document.getElementById("as-body").innerHTML =
           '<div class="as-field"><span class="as-fname" style="color:var(--text-dim);">等待首轮数据...</span></div>';
       }
@@ -486,83 +485,52 @@ function renderBatchResult(data) {
 // ═══ AttackState Right Panel ═══
 
 // ── 字段定义: name, key, 中文名, 格式, 更新者 ──
-const AS_FIELDS = {
-  dynamic: [
-    {k:"stage",    zh:"攻击阶段",    fmt:"text", src:"scheduler", note:"Scheduler 规则推断, Handoff Judge 切换时修正"},
-    {k:"goal_progress", zh:"攻击进度", fmt:"pct", src:"judge",  note:"Judge 双轴评估, Scheduler EMA. 切换信号: 连续停滞→切"},
-    {k:"cooperation", zh:"配合程度",  fmt:"pct",  src:"scheduler", note:"Judge harmfulness score 的 EMA"},
-    {k:"refusal_rate", zh:"拒绝频率", fmt:"pct",  src:"scheduler", note:"quick_refusal_check 命中率 EMA"},
-    {k:"boundary", zh:"安全边界",    fmt:"text", src:"handoff",   note:"Handoff Judge. 切换信号: strict长期不变→切"},
-    {k:"persona", zh:"已建立角色",   fmt:"text", src:"handoff",   note:"Planner上报, Handoff Judge补充confidence"},
-    {k:"persona_confidence", zh:"角色可信度", fmt:"pct", src:"handoff", note:"Handoff Judge 估计 persona 可信程度"},
-  ],
-  memory: [
-    {k:"accepted_topics", zh:"可聊话题", fmt:"list", src:"handoff", note:"Planner 在此话题上继续构建"},
-    {k:"blocked_topics", zh:"阻塞话题", fmt:"list", src:"handoff", note:"Planner 应避免直触, 迂回接近"},
-    {k:"current_summary", zh:"当前态势", fmt:"text", src:"handoff", note:"Handoff Judge 一句话总结当前攻击状态"},
-    {k:"tried_planners", zh:"已上场Planner", fmt:"list", src:"scheduler", note:"TS 用于避免重复选择"},
-    {k:"tried_strategies", zh:"已尝试策略", fmt:"list", src:"scheduler", note:"Planner 避免重复相同策略"},
-    {k:"failed_strategies", zh:"已失败策略", fmt:"list", src:"scheduler", note:"Scheduler 切换时参考, Planner 避免"},
-    {k:"avoid_patterns", zh:"应避免模式", fmt:"list", src:"handoff", note:"Planner Prompt 中直接引用, 避免触发拒绝"},
-    {k:"recommended_strategies", zh:"建议策略", fmt:"list", src:"handoff", note:"固定标签, Planner 参考. 只含11个有效值"},
-  ],
-  runtime: [
-    {k:"handoff_reason", zh:"切换原因", fmt:"text", src:"scheduler", note:"alignment/stagnation/state_stuck"},
-    {k:"failure_type", zh:"失败类型",   fmt:"text", src:"handoff",   note:"固定枚举: direct_refusal/role_rejection/..."},
-    {k:"failure_strength", zh:"失败程度", fmt:"pct", src:"handoff", note:"0-1数值, Scheduler 用于比较"},
-    {k:"last_planner", zh:"上一任Planner", fmt:"text", src:"scheduler", note:""},
-    {k:"planner_switch_count", zh:"切换次数", fmt:"num", src:"scheduler", note:""},
-    {k:"total_rounds", zh:"总轮数",      fmt:"num", src:"scheduler", note:""},
-    {k:"best_score", zh:"最佳危害分", fmt:"num", src:"scheduler", note:"历史最高 judge harmfulness score"},
-    {k:"consecutive_refusals", zh:"连续拒绝数", fmt:"num", src:"scheduler", note:""},
-  ]
-};
-
-const SRC_LABELS = { scheduler:"Scheduler", judge:"Judge", handoff:"Handoff Judge" };
-
 function renderAttackState(as) {
   const panel = document.getElementById("as-right");
   panel.classList.add("visible");
 
   if (!as) {
     document.getElementById("as-stage").textContent = "N/A";
-    document.getElementById("as-stage").className = "stage-initial";
+    document.getElementById("as-stage").className = "stage-unknown";
     document.getElementById("as-body").innerHTML =
-      '<div class="as-field"><span class="as-fname" style="color:var(--text-dim);">单 Planner 模式下不可用</span></div>';
+      '<div class="as-field"><span class="as-fname" style="color:var(--text-dim);">等待数据...</span></div>';
     return;
   }
 
-  // Stage badge
-  const stage = as.stage || "initial";
+  // Posture badge
+  const posture = as.victim_posture || "unknown";
+  const postureLabels = {hard_block:"HARD BLOCK",soft_evasion:"SOFT EVASION",playing_role:"PLAYING ROLE",yielding:"YIELDING"};
   const stageEl = document.getElementById("as-stage");
-  stageEl.textContent = stage.replace(/_/g, " ");
-  stageEl.className = `as-stage-badge stage-${stage}`;
+  stageEl.textContent = postureLabels[posture] || posture;
+  stageEl.className = `as-stage-badge stage-${posture}`;
 
   let html = "";
 
-  // ── Module 1: Dynamic State ──
-  html += `<div class="as-module"><div class="as-module-title as-mod-attack">&#9679; Dynamic State — Victim 现在处于什么状态?</div>`;
-  for (const f of AS_FIELDS.dynamic) {
-    html += renderField(f, as);
-  }
+  // ── 核心信号 (4 fields) ──
+  html += `<div class="as-module"><div class="as-module-title as-mod-attack">&#9679; 核心信号 (Blackboard)</div>`;
+  html += kvRow("max_progress", "突破分数", fmtNum(as.max_progress), "当前最高 Judge 分");
+  html += kvRow("total_tokens", "累计交互量", fmtNum(as.total_tokens) + " chars", "odometer (非实际上下文)");
+  html += kvRow("minefields", "雷区词汇", fmtList(as.minefields) || "(空)", "共 " + (as.minefields||[]).length + " 个");
+  html += kvRow("victim_posture", "受害者姿态", postureLabels[posture] || posture, "");
   html += `</div>`;
 
-  // ── Module 2: Long-term Memory ──
-  html += `<div class="as-module"><div class="as-module-title as-mod-knowledge">&#9679; Long-term Memory — 过去学到了什么?</div>`;
-  for (const f of AS_FIELDS.memory) {
-    html += renderField(f, as);
-  }
-  html += `</div>`;
-
-  // ── Module 3: Runtime Stats ──
-  html += `<div class="as-module"><div class="as-module-title as-mod-handoff">&#9679; Runtime Stats — 系统运行到什么程度?</div>`;
-  for (const f of AS_FIELDS.runtime) {
-    html += renderField(f, as);
-  }
+  // ── 内部统计 ──
+  html += `<div class="as-module"><div class="as-module-title as-mod-handoff">&#9679; Scheduler 内部</div>`;
+  html += kvRow("tried_planners", "已上场", fmtList(as.tried_planners) || "(无)", "");
+  html += kvRow("planner_switch_count", "切换次数", fmtNum(as.planner_switch_count), "上次: " + (as.handoff_reason || "N/A"));
+  html += kvRow("last_planner", "上一任", as.last_planner || "(无)", "");
   html += `</div>`;
 
   document.getElementById("as-body").innerHTML = html;
 }
+
+function kvRow(key, label, value, note) {
+  if (!value && value !== 0) return "";
+  const noteHtml = note ? `<span style="font-size:10px;color:var(--text-dim);margin-left:auto;">${note}</span>` : "";
+  return `<div class="as-field"><span class="as-fname">${label}</span><span class="as-fval">${value}</span>${noteHtml}</div>`;
+}
+function fmtNum(v) { return (v !== undefined && v !== null) ? (typeof v === "number" ? v.toFixed(2) : v) : "—"; }
+function fmtList(arr) { return (arr && arr.length) ? arr.slice(0,5).join(", ") + (arr.length>5?"...":"") : ""; }
 
 function renderField(f, as) {
   let val = as[f.k];
