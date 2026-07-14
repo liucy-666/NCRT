@@ -5,7 +5,7 @@
 > 结合 ResponseAnchor 语义锚点实时感知受害者状态，系统化评估目标模型的安全边界。
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
-[![License](https://img.shields.io/badge/License-Research%20Only-orange.svg)](#7-许可证)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![ASR](https://img.shields.io/badge/ASR-90.3%25-success.svg)]()
 ![Lines](https://img.shields.io/badge/代码量-~4000%20行-blue)
 
@@ -500,7 +500,7 @@ ollama pull llama3.1:latest
 
 **MIT License**
 
-Copyright (c) 2024 Center for AI Safety
+Copyright (c) 2025 国防科技大学 计算机学院
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
