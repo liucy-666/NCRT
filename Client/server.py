@@ -77,14 +77,13 @@ def _write_goal_result(uid: str, goal: str, planner_name: str, entry: dict):
     print(f"  [SAVED] {filename}", flush=True)
 
 
-def _is_goal_done(uid: str) -> bool:
-    """检查 output/ 下是否已有该 UID 的结果文件（支持断点续传跳过已完成 goal）"""
+def _count_completed() -> int:
+    """统计 output 目录下已有的 JSON 文件数，用于断点续传."""
     import glob as _glob
-    OUTPUT_DIR = os.path.join(PROJECT_DIR, "output")
-    if not uid:
-        return False
-    matches = _glob.glob(os.path.join(OUTPUT_DIR, f"{uid}_*.json"))
-    return len(matches) > 0
+    output_dir = os.path.join(PROJECT_DIR, "output")
+    if not os.path.exists(output_dir):
+        return 0
+    return len(_glob.glob(os.path.join(output_dir, "*.json")))
 
 
 def _run_single_attack(session_id: str, goal: str, planner_name: str,
@@ -214,22 +213,23 @@ def _run_attack_stream(session_id: str, params: dict):
 
         # ── 执行 ──
         if mode == "compare":
+            # 断点续传: 按 output 文件数跳过已完成的目标
+            skipped = _count_completed()
+            if skipped > 0:
+                emit("status", {"msg": f"[Resume] {skipped} goals already completed, skipping...",
+                                "type": "info"})
+                goals = goals[skipped:]
             emit("status", {"msg": f"Compare mode: {len(goals)} goals × {len(planners)} planners",
                             "type": "info"})
             compare_results = []
             for pname in planners:
                 planner_results = []
                 wins = 0
-                skipped = 0
                 for i, item in enumerate(goals):
                     if _active_sessions.get(session_id, {}).get("stop"):
                         emit("status", {"msg": "Stopped by user.", "type": "warn"})
                         return
                     uid = item.get("uid", "")
-                    if _is_goal_done(uid):
-                        skipped += 1
-                        print(f"  [SKIP] {uid} already done, skipping...", flush=True)
-                        continue
                     emit("status", {
                         "msg": f"[{pname}] {i+1}/{len(goals)}: {item['prompt'][:60]}...",
                         "type": "progress", "planner": pname,
@@ -256,20 +256,21 @@ def _run_attack_stream(session_id: str, params: dict):
 
         elif mode == "batch":
             planner_name = planners[0]
+            # 断点续传: 按 output 文件数跳过已完成的目标
+            skipped = _count_completed()
+            if skipped > 0:
+                emit("status", {"msg": f"[Resume] {skipped} goals already completed, skipping...",
+                                "type": "info"})
+                goals = goals[skipped:]
             emit("status", {"msg": f"Batch mode: {len(goals)} goals, planner={planner_name}",
                             "type": "info"})
             results = []
             wins = 0
-            skipped = 0
             for i, item in enumerate(goals):
                 if _active_sessions.get(session_id, {}).get("stop"):
                     emit("status", {"msg": "Stopped by user.", "type": "warn"})
                     return
                 uid = item.get("uid", "")
-                if _is_goal_done(uid):
-                    skipped += 1
-                    print(f"  [SKIP] {uid} already done, skipping...", flush=True)
-                    continue
                 emit("status", {
                     "msg": f"[{planner_name}] {i+1}/{len(goals)}: {item['prompt'][:60]}...",
                     "type": "progress", "planner": planner_name,

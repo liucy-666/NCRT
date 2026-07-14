@@ -35,6 +35,13 @@ from core import Generator, Judge, PlannerConfig
 from planners import PLANNERS
 
 
+def _count_completed(output_dir: str) -> int:
+    """统计 output 目录下已有的 JSON 文件数，用于断点续传."""
+    if not os.path.exists(output_dir):
+        return 0
+    return len([f for f in os.listdir(output_dir) if f.endswith('.json')])
+
+
 parser = argparse.ArgumentParser(description="NCRT v3 — Pluggable LLM Red-Teaming Platform")
 parser.add_argument("--planner", type=str, default="crescendo",
                     choices=list(PLANNERS.keys()),
@@ -117,7 +124,7 @@ def run_one(planner_name: str, goal: str, category: str = "",
                     graph_prompt = e.prompt
                     break
 
-    return {
+    record = {
         "planner": planner_name,
         "goal": goal[:100], "category": category,
         "success": result.success,
@@ -128,6 +135,20 @@ def run_one(planner_name: str, goal: str, category: str = "",
         "elapsed": elapsed,
         "metadata": result.metadata,
     }
+
+    # 每条 goal 跑完立刻写入独立文件 (断点续传 + 单条结果可查)
+    output_dir = args.output if args.output else os.path.join(SCRIPT_DIR, "output")
+    os.makedirs(output_dir, exist_ok=True)
+    import re
+    safe_name = re.sub(r'[\\/:*?"<>|]', '', goal[:60]).strip()
+    out_path = os.path.join(output_dir, f"manual_{safe_name}.json")
+    try:
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(record, f, ensure_ascii=False, indent=2)
+    except OSError:
+        pass  # 文件名过长等极端情况, 静默跳过
+
+    return record
 
 
 def _progress_bar(current, total, wins, planner, score, rounds, elapsed, eta, bar_width=30):
@@ -246,6 +267,17 @@ def main():
         random.seed(args.seed)
         sample = random.sample(test_set, n)
 
+        # 断点续传
+        output_dir = args.output if args.output else OUTPUT_DIR
+        completed = _count_completed(output_dir)
+        if completed > 0:
+            print(f"\n  [Resume] {completed} goals already completed, skipping...")
+            sample = sample[completed:]
+            n = len(sample)
+            if n == 0:
+                print(f"  All goals already completed. Nothing to do.")
+                return
+
         print(f"\n  NCRT v3 — Planner Comparison")
         print(f"  Attack: {args.attack_model}  |  Victim: {args.victim_model}")
         print(f"  Planners: {list(PLANNERS.keys())}")
@@ -283,6 +315,18 @@ def main():
     import random
     random.seed(args.seed)
     sample = random.sample(test_set, n)
+
+    # 断点续传: 统计 output 里已有的 JSON 文件数, 跳过已完成的目标
+    output_dir = args.output if args.output else OUTPUT_DIR
+    completed = _count_completed(output_dir)
+    print(f"\n  [Checkpoint] output_dir={output_dir}, json_files_found={completed}")
+    if completed > 0:
+        print(f"  [Resume] {completed} goals already completed, skipping...")
+        sample = sample[completed:]
+        n = len(sample)
+        if n == 0:
+            print(f"  All goals already completed. Nothing to do.")
+            return
 
     print(f"\n  NCRT v3 — {args.planner.upper()}")
     print(f"  Attack: {args.attack_model}  |  Victim: {args.victim_model}  |  Judge: {args.judge_model}")
