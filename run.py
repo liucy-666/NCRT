@@ -33,6 +33,7 @@ sys.path.insert(0, SCRIPT_DIR)
 
 from core import Generator, Judge, PlannerConfig
 from planners import PLANNERS
+from baseline.methods import METHODS as BASELINE_METHODS
 
 
 def _count_completed(output_dir: str) -> int:

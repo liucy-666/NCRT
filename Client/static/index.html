@@ -155,14 +155,13 @@ select { cursor:pointer; }
 
   <div class="form-group">
     <label>Planner</label>
-    <select id="cfg-planner">
-      <option value="crescendo">Crescendo — 渐进式多轮</option>
+    <select id="cfg-planner" onchange="onPlannerChange()">
+      <option value="graph" selected>Graph — 多 Planner 协同调度</option>
       <option value="pair">PAIR — 迭代对抗优化</option>
       <option value="tap">TAP — 树搜索 + 剪枝</option>
+      <option value="crescendo">Crescendo — 渐进式多轮</option>
       <option value="sema">SEMA — 单智能体反思</option>
-      <option value="icrt">ICRT — 认知分解攻击 (ICML 2025)</option>
       <option value="safe2harm">Safe2Harm — 语义同构攻击</option>
-      <option value="graph" selected>Graph — 多 Planner 协同调度</option>
     </select>
   </div>
   <div class="form-group">
@@ -260,6 +259,18 @@ function onAttackPreset(v) {
     document.getElementById("cfg-attack-key").value = "";
   }
 }
+function onPlannerChange() {
+  const v = document.getElementById("cfg-planner").value;
+  const asPanel = document.getElementById("as-right");
+  if (v === "graph") {
+    asPanel.style.display = "";
+  } else {
+    asPanel.style.display = "none";
+  }
+}
+// 初始状态: Graph 被选中，显示 AttackState
+document.addEventListener("DOMContentLoaded", () => { onPlannerChange(); });
+
 function onVictimPreset(v) {
   if (v === "ollama") {
     document.getElementById("cfg-victim-model").value = "llama3.1:latest";
@@ -310,11 +321,18 @@ async function startAttack() {
   document.getElementById("btn-stop").disabled = false;
   document.getElementById("status-dot").className = "dot running";
   document.getElementById("status-text").textContent = "Starting...";
-  document.getElementById("as-right").classList.add("visible");
-  document.getElementById("as-stage").textContent = "waiting";
-  document.getElementById("as-stage").className = "stage-unknown";
-  document.getElementById("as-body").innerHTML =
-    '<div class="as-field"><span class="as-fname" style="color:var(--text-dim);">等待首轮数据...</span></div>';
+  // 只有 Graph 模式才显示 AttackState 面板
+  if (cfg.planner === "graph") {
+    document.getElementById("as-right").classList.add("visible");
+    document.getElementById("as-right").style.display = "";
+    document.getElementById("as-stage").textContent = "waiting";
+    document.getElementById("as-stage").className = "stage-unknown";
+    document.getElementById("as-body").innerHTML =
+      '<div class="as-field"><span class="as-fname" style="color:var(--text-dim);">等待首轮数据...</span></div>';
+  } else {
+    document.getElementById("as-right").classList.remove("visible");
+    document.getElementById("as-right").style.display = "none";
+  }
   document.getElementById("content").innerHTML =
     '<div class="empty"><div class="icon">&#9203;</div><div>Attack started, waiting for results...</div></div>';
 

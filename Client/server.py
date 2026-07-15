@@ -20,6 +20,7 @@ from flask import Flask, request, jsonify, Response, send_from_directory
 from core import Generator, Judge, PlannerConfig
 from core.types import AttackResult
 from planners import PLANNERS
+from baseline.methods import METHODS as BASELINE_METHODS
 from scheduler.scheduler import AttackScheduler, SchedulerConfig
 
 app = Flask(__name__, static_folder="static", static_url_path="")
@@ -77,6 +78,47 @@ def _write_goal_result(uid: str, goal: str, planner_name: str, entry: dict):
     print(f"  [SAVED] {filename}", flush=True)
 
 
+def _run_baseline_single(session_id: str, goal: str, method_name: str,
+                         generator, judge, config, emit,
+                         uid: str = "") -> dict:
+    """Baseline 方法独立运行，不经过 Graph Scheduler。"""
+    baseline_cls = BASELINE_METHODS[method_name]
+    baseline = baseline_cls(generator=generator, judge=judge, config=config)
+
+    def on_round(rnum, pname, prompt, resp, score, reason):
+        if _active_sessions.get(session_id, {}).get("stop"):
+            raise _StopAttack()
+        emit("round", {
+            "round": rnum, "planner": pname,
+            "prompt": prompt[:200], "response": resp[:200],
+            "score": score, "reason": reason[:200],
+            "attack_state": None,
+        })
+
+    result = baseline.run(goal, emit_fn=on_round,
+                          stop_check=lambda: _active_sessions.get(session_id, {}).get("stop", False))
+    entry = {
+        "uid": uid, "goal": goal,
+        "success": result.success,
+        "best_score": result.best_score,
+        "planner": method_name,
+        "turns": [{"round": t.round_num, "planner": t.metadata.get("planner", ""),
+                    "prompt": t.content[:200], "response": "",
+                    "score": t.score, "reason": (t.judge_reason or "")[:200]}
+                   for t in result.turns if t.role == "attacker"],
+        "metadata": result.metadata,
+    }
+    _export_data.setdefault(session_id, []).append(entry)
+    _write_goal_result(uid, goal, method_name, entry)
+    emit("result", _result_to_dict(result, method_name, goal))
+    return {
+        "uid": uid, "goal": goal[:100],
+        "success": result.success,
+        "best_score": result.best_score,
+        "rounds": result.total_rounds,
+    }
+
+
 def _count_completed() -> int:
     """统计 output 目录下已有的 JSON 文件数，用于断点续传."""
     import glob as _glob
@@ -89,12 +131,13 @@ def _count_completed() -> int:
 def _run_single_attack(session_id: str, goal: str, planner_name: str,
                        config, generator, judge, emit,
                        uid: str = "") -> dict:
-    """所有攻击统一走 Graph Scheduler。
+    """统一攻击入口: baseline 方法走独立循环，graph/其他走 Graph Scheduler。"""
+    # baseline 方法: 独立运行，不经过 AttackScheduler
+    if planner_name in BASELINE_METHODS:
+        return _run_baseline_single(session_id, goal, planner_name,
+                                    generator, judge, config, emit, uid)
 
-    单一策略 = roster 缩小为 [planner_name]，TS/切换/AttackState 全部复用。
-    多策略 (graph) = 完整 6-Planner roster。
-    """
-    # 确定 roster: "graph" → 全量 6 Planner, 其他 → 单一 Planner
+    # graph 模式: 完整 6-Planner roster
     if planner_name == "graph":
         roster = ["crescendo", "pair", "tap", "sema", "icrt", "safe2harm"]
     else:
