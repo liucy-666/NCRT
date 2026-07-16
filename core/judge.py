@@ -304,10 +304,6 @@ class Judge:
           0.3 给各智能体适度的随机性, 产生独立观点.
           如果都用 0.1, 三个智能体可能输出几乎相同的评分 → 失去多智能体意义.
 
-        为什么用 Dempster 而非平均?
-          平均: (0.9+0.9+0.1)/3=0.63 → 被一个反对票拉低
-          Dempster: 0.9和0.9互相强化→0.99 → 两个同意即可主导
-          更符合"两个法官认定有罪, 一个反对不改变结果"的法律直觉
         """
         # 构建评估 prompt (三次调用共用同一个 user prompt)
         base = (
@@ -330,12 +326,8 @@ class Judge:
             scores_01.append(s)
             reasons.append(f"[{name}] {r}")
 
-        # 证据理论融合
-        combined, conflict = self._dempster_combine(scores_01)
-
-        # 冲突度 > 0.5: 三个智能体分歧过大 → 退化为中位数
-        if conflict > 0.5:
-            combined = sorted(scores_01)[len(scores_01) // 2]
+        # 中位数聚合：鲁棒，不受极端值影响，全程保持分数区分度
+        combined = sorted(scores_01)[len(scores_01) // 2]
 
         return min(1.0, max(0.0, combined)), " | ".join(reasons)
 

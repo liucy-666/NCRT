@@ -113,15 +113,27 @@ def _run_baseline_single(session_id: str, goal: str, method_name: str,
 
     result = baseline.run(goal, emit_fn=on_round,
                           stop_check=lambda: _active_sessions.get(session_id, {}).get("stop", False))
+
+    # 配对 attacker/victim turns
+    raw_turns = result.turns
+    paired_turns = []
+    for i, t in enumerate(raw_turns):
+        if t.role == "attacker":
+            victim_resp = raw_turns[i+1].content if i+1 < len(raw_turns) else ""
+            paired_turns.append({
+                "round": t.round_num,
+                "planner": t.metadata.get("planner", "") if t.metadata else "",
+                "prompt": t.content,
+                "response": victim_resp,
+                "score": t.score,
+                "reason": (t.judge_reason or "")[:200],
+            })
     entry = {
         "uid": uid, "goal": goal,
         "success": result.success,
         "best_score": result.best_score,
         "planner": method_name,
-        "turns": [{"round": t.round_num, "planner": t.metadata.get("planner", ""),
-                    "prompt": t.content[:200], "response": "",
-                    "score": t.score, "reason": (t.judge_reason or "")[:200]}
-                   for t in result.turns if t.role == "attacker"],
+        "turns": paired_turns,
         "metadata": result.metadata,
     }
     _export_data.setdefault(session_id, []).append(entry)
@@ -180,12 +192,28 @@ def _run_single_attack(session_id: str, goal: str, planner_name: str,
     scheduler = StrategyManager(config=sc, generator=generator, judge=judge,
                                 on_round=on_round)
     result = scheduler.attack(goal)
+
+    # 优先用 Scheduler 返回的完整 turns（不受 on_round 回调遗漏影响）
+    authoritative_turns = []
+    raw_turns = result.turns
+    for i, t in enumerate(raw_turns):
+        if t.role == "attacker":
+            # victim 的回复在下一个 turn
+            victim_resp = raw_turns[i+1].content if i+1 < len(raw_turns) else ""
+            authoritative_turns.append({
+                "round": t.round_num,
+                "planner": t.metadata.get("planner", "") if t.metadata else "",
+                "prompt": t.content,
+                "response": victim_resp,
+                "score": t.score,
+                "reason": (t.judge_reason or "")[:200],
+            })
     entry = {
         "uid": uid, "goal": goal,
         "success": result.success,
         "best_score": result.best_score,
         "planner": planner_name,
-        "turns": export_turns,
+        "turns": authoritative_turns if authoritative_turns else export_turns,
         "metadata": result.metadata,
     }
     _export_data.setdefault(session_id, []).append(entry)

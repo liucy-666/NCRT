@@ -116,6 +116,21 @@ class StrategyManager:
                     "reason": "success",
                     "summary": "",
                 })
+                scheduler_state = {
+                    "planner": current,
+                    "round": round_num,
+                    "max_rounds": self.config.max_llm_calls,
+                    "planner_round": planner_round,
+                    "best_score": best_score,
+                    "status": "SUCCESS",
+                    "handoff_summary": "",
+                    "used_planners": used_planners,
+                    "switches": switches,
+                    "switch_reason": "success",
+                }
+                if self.on_round:
+                    self.on_round(round_num, current, best_prompt, best_response,
+                                  best_score, "", scheduler_state)
                 return self._result(True, goal, turns, calls, round_num,
                                     best_score, best_prompt, best_response,
                                     switches=switches)
@@ -193,6 +208,7 @@ class StrategyManager:
                 current = next_name
                 planner = self._build(current, handoff_summary=last_handoff_summary)
                 is_first_planner = False
+                first_cycle_done = False
                 planner_round = 0
                 continue
 
