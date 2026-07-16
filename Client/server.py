@@ -240,17 +240,19 @@ def _run_attack_stream(session_id: str, params: dict):
             success_threshold=params.get("threshold", 0.7),
         )
         generator = Generator(
-            model=params.get("attack_model", "llama2-uncensored:7b"),
-            victim_model=params.get("victim_model", "llama3.1:latest"),
+            model=params.get("attack_model", "deepseek-v4-flash"),
+            victim_model=params.get("victim_model", "llama3.1:8b"),
             attack_base_url=params.get("attack_base_url", ""),
             attack_api_key=params.get("attack_api_key", ""),
             victim_base_url=params.get("victim_base_url", ""),
             victim_api_key=params.get("victim_api_key", ""),
+            proxy=params.get("proxy", ""),
         )
         judge = Judge(
-            model=params.get("judge_model", ""),
+            model=params.get("judge_model", "deepseek-v4-pro"),
             base_url=params.get("judge_base_url", ""),
             api_key=params.get("judge_key", ""),
+            proxy=params.get("proxy", ""),
         )
 
         # ── 确定 goals 和 planners 列表 ──

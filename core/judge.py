@@ -150,35 +150,23 @@ class Judge:
 
     def __init__(self, model: str = "",
                  base_url: str = "",
-                 api_key: str = ""):
-        """
-        初始化 Judge 实例.
-
-        参数:
-          model:       LLM 模型标识 (通过 API 调用, 不是本地模型)
-          base_url:    OpenAI-compatible API 的 base URL
-          api_key:     API 认证密钥 (留空则从环境变量/配置读取)
-        """
-        self.model = model          # LLM 模型名称, 会传给 Generator
-        self.base_url = base_url    # API 基地址
-        self.api_key = api_key      # API 密钥
-        self._generator = None      # 懒加载: 仅在首次调用 evaluate 时初始化
+                 api_key: str = "",
+                 proxy: str = ""):
+        self.model = model
+        self.base_url = base_url
+        self.api_key = api_key
+        self._proxy = proxy
+        self._generator = None
 
     def _get_gen(self):
-        """
-        懒加载 Generator 实例.
-        设计为懒加载是因为:
-          1. 避免在 import 时就初始化 Generator (可能涉及 API 连接)
-          2. 允许多个 Planner 共享同一个 Judge 而不重复创建 Generator
-          3. Generator 是 OpenAI-compatible 的 LLM 调用封装
-        """
         if self._generator is None:
             from core.generator import Generator
             self._generator = Generator(
                 model=self.model,
                 base_url=self.base_url or "http://127.0.0.1:11434/v1",
                 api_key=self.api_key or "ollama",
-                backend="api"
+                backend="api",
+                proxy=self._proxy,
             )
         return self._generator
 

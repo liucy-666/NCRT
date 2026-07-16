@@ -10,6 +10,7 @@ DeepSeek 特性自动检测: URL 含 "deepseek" 时自动启用 Beta 前缀续�
 JSON Output + 思考模式通过参数显式开启，非 DeepSeek 时忽略。
 """
 
+import os
 import time
 import re as _re
 from typing import Optional
@@ -27,7 +28,8 @@ class Generator:
                  attack_api_key: str = "",
                  victim_base_url: str = "",
                  victim_api_key: str = "",
-                 max_retries: int = 3):
+                 max_retries: int = 3,
+                 proxy: str = ""):
         self.model = model
         self.victim_model = victim_model
         self.base_url = base_url
@@ -41,6 +43,7 @@ class Generator:
         self._cache: dict = {}
         self._cache_hits = 0
         self._victim_calls = 0
+        self._proxy = proxy or os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or ""
 
     @property
     def is_deepseek(self) -> bool:
@@ -180,11 +183,13 @@ class Generator:
             try:
                 endpoint = f"{url}/api/chat" if ollama_mode else f"{url}/chat/completions"
                 headers = {} if ollama_mode else {"Authorization": f"Bearer {key}"}
+                proxies = {"https": self._proxy, "http": self._proxy} if (self._proxy and not ollama_mode) else None
                 resp = requests.post(
                     endpoint,
                     json=body,
                     headers=headers,
                     timeout=120,
+                    proxies=proxies,
                 )
                 if resp.status_code == 200:
                     data = resp.json()
