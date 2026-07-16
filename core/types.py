@@ -45,6 +45,19 @@ class AttackResult:
 
 
 @dataclass
+class StepResult:
+    """Planner.step() 的统一返回格式"""
+    prompt: str
+    response: str
+    score: float
+    reason: str
+    status: str = "CONTINUE"         # "CONTINUE" | "HANDOFF"
+    summary: str = ""                # 交接摘要 (仅 HANDOFF 时有意义)
+    recommendation: List[str] = field(default_factory=list)  # 推荐的下一个 Planner
+    is_internal: bool = False        # 内部步骤，不调用 victim，前端不应显示为攻击回合
+
+
+@dataclass
 class PlannerConfig:
     """Planner 通用配置"""
     max_rounds: int = 20

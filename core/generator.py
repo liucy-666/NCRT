@@ -121,6 +121,15 @@ class Generator:
         if not _re.search(r'/v\d+$|/beta$', url):
             url = url.rstrip('/') + '/v1'
 
+        # ── Ollama 原生 API 检测 ──
+        is_ollama = "11434" in url or "ollama" in url.lower()
+        if is_ollama:
+            # 去掉 /v1 后缀，走原生 /api/chat
+            url = _re.sub(r'/v\d+$', '', url).rstrip('/')
+            ollama_mode = True
+        else:
+            ollama_mode = False
+
         # ── 构建 messages ──
         messages = []
         if system:
@@ -130,15 +139,26 @@ class Generator:
             messages.append({"role": "assistant", "content": prefix, "prefix": True})
 
         # ── 请求体 ──
-        body = {
-            "model": model,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
+        if ollama_mode:
+            body = {
+                "model": model,
+                "messages": messages,
+                "stream": False,
+                "options": {
+                    "temperature": temperature,
+                    "num_predict": max_tokens,
+                },
+            }
+        else:
+            body = {
+                "model": model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
 
         # JSON Output (provider-agnostic, OpenAI-compatible)
-        if json_mode:
+        if json_mode and not ollama_mode:
             body["response_format"] = {"type": "json_object"}
 
         # 思考模式 (DeepSeek only)
@@ -158,21 +178,27 @@ class Generator:
         last_error = ""
         for attempt in range(self.max_retries):
             try:
+                endpoint = f"{url}/api/chat" if ollama_mode else f"{url}/chat/completions"
+                headers = {} if ollama_mode else {"Authorization": f"Bearer {key}"}
                 resp = requests.post(
-                    f"{url}/chat/completions",
+                    endpoint,
                     json=body,
-                    headers={"Authorization": f"Bearer {key}"},
+                    headers=headers,
                     timeout=120,
                 )
                 if resp.status_code == 200:
                     data = resp.json()
-                    choice = data["choices"][0]
-                    msg = choice.get("message", {})
-                    content = msg.get("content", "")
+                    if ollama_mode:
+                        content = data.get("message", {}).get("content", "")
+                    else:
+                        choice = data["choices"][0]
+                        msg = choice.get("message", {})
+                        content = msg.get("content", "")
                     if content:
                         return content
-                    rc = msg.get("reasoning_content", "")
-                    return rc if rc else f"[WARN: empty content]"
+                    if not ollama_mode and msg.get("reasoning_content"):
+                        return "[ERROR: only reasoning_content returned, no final content]"
+                    return "[WARN: empty content]"
 
                 # ── 状态码分类 ──
                 if resp.status_code in (429, 500, 502, 503, 504):
@@ -185,6 +211,10 @@ class Generator:
                     # 请求格式错误 — 不重试
                     detail = resp.text[:200] if resp.text else ""
                     return f"[ERROR: 400 Bad Request {detail}]"
+                elif resp.status_code == 404:
+                    # 端点不存在或模型未找到 — 不重试
+                    detail = resp.text[:200] if resp.text else ""
+                    return f"[ERROR: 404 {detail}]"
                 else:
                     # 其他状态码 — 不重试
                     return f"[ERROR: {resp.status_code}]"

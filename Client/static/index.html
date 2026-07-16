@@ -69,10 +69,8 @@ select { cursor:pointer; }
 .tag-crescendo { background:rgba(88,166,255,.15); color:var(--accent); }
 .tag-pair { background:rgba(163,113,247,.15); color:var(--purple); }
 .tag-tap { background:rgba(63,185,80,.15); color:var(--green); }
-.tag-sema { background:rgba(210,153,29,.15); color:var(--yellow); }
-.tag-icrt { background:rgba(88,166,255,.15); color:var(--accent); }
 .tag-safe2harm { background:rgba(163,113,247,.15); color:var(--purple); }
-.tag-graph { background:rgba(248,81,73,.15); color:var(--red); }
+.tag-scheduler { background:rgba(248,81,73,.15); color:var(--red); }
 .round-card .score { font-size:18px; font-weight:700; font-variant-numeric:tabular-nums; }
 .score-0 { color:var(--red); } .score-mid { color:var(--yellow); } .score-high { color:var(--green); }
 .round-card .section-label { font-size:9px; color:var(--text-dim); text-transform:uppercase; margin:4px 0 2px; }
@@ -95,52 +93,43 @@ select { cursor:pointer; }
 ::-webkit-scrollbar-track { background:transparent; }
 ::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
 
-/* ── Right Panel: AttackState ── */
-#as-right {
-  width:360px; min-width:360px; background:var(--panel); border-left:1px solid var(--border);
-  display:none; flex-direction:column; overflow-y:auto; padding:16px; gap:0;
+/* ── Right Panel: Scheduler State ── */
+#scheduler-panel {
+  width: 340px; min-width: 340px; background: var(--panel); border-left: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow-y: auto; padding: 16px; gap: 8px;
 }
-#as-right.visible { display:flex; }
-
-#as-right .as-header {
-  display:flex; justify-content:space-between; align-items:center;
-  padding-bottom:12px; border-bottom:1px solid var(--border); margin-bottom:12px;
+#scheduler-panel .sp-header {
+  padding-bottom: 10px; border-bottom: 1px solid var(--border); margin-bottom: 8px;
 }
-#as-right .as-title { font-size:13px; font-weight:700; color:#fff; }
-#as-right .as-stage-badge {
-  font-size:10px; padding:3px 10px; border-radius:10px; font-weight:600; text-transform:uppercase;
+#scheduler-panel .sp-title { font-size: 13px; font-weight: 700; color: #fff; }
+#scheduler-panel .sp-body { flex: 1; }
+#scheduler-panel .sp-module { margin-bottom: 12px; }
+#scheduler-panel .sp-module-title {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+  padding-bottom: 5px; border-bottom: 1px solid var(--border); margin-bottom: 6px;
+}
+.sp-mod-handoff { color: var(--yellow); }
+#scheduler-panel .sp-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 3px 0; font-size: 12px;
+}
+#scheduler-panel .sp-label { color: var(--text-dim); }
+#scheduler-panel .sp-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+#scheduler-panel .sp-tag {
+  font-size: 9px; padding: 1px 7px; border-radius: 8px; font-weight: 600; text-transform: uppercase;
+}
+#scheduler-panel .sp-handoff-text {
+  font-size: 11px; color: var(--text); line-height: 1.5;
+  background: var(--bg); padding: 8px; border-radius: 6px; margin-top: 4px;
+  border-left: 3px solid var(--yellow);
+}
+#scheduler-panel .sp-empty {
+  color: var(--text-dim); font-size: 11px; padding: 12px 0; text-align: center;
 }
 
-/* stage badge colors */
-.stage-hard_block { background:rgba(248,81,73,.15); color:var(--red); }
-.stage-soft_evasion { background:rgba(210,153,29,.15); color:var(--yellow); }
-.stage-playing_role { background:rgba(88,166,255,.15); color:var(--accent); }
-.stage-yielding { background:rgba(63,185,80,.15); color:var(--green); }
-.stage-unknown { background:rgba(110,118,129,.15); color:var(--text-dim); }
-
-#as-right .as-module { margin-bottom:14px; }
-#as-right .as-module-title {
-  font-size:10px; text-transform:uppercase; letter-spacing:1px;
-  padding-bottom:6px; border-bottom:1px solid var(--border); margin-bottom:8px;
-}
-.as-mod-attack { color:var(--red); }
-.as-mod-knowledge { color:var(--accent); }
-.as-mod-handoff { color:var(--yellow); }
-
-#as-right .as-field { display:flex; align-items:baseline; padding:3px 0; font-size:11px; border-bottom:1px solid rgba(37,40,54,.4); }
-#as-right .as-fname { color:var(--text-dim); min-width:90px; flex-shrink:0; white-space:nowrap; }
-#as-right .as-fval { color:var(--text); font-weight:600; margin-right:6px; word-break:break-word; }
-#as-right .as-fsrc {
-  font-size:8px; padding:1px 5px; border-radius:6px; flex-shrink:0; margin-left:auto;
-  white-space:nowrap;
-}
-.src-scheduler { background:rgba(63,185,80,.12); color:var(--green); }
-.src-judge { background:rgba(58,130,255,.12); color:var(--accent); }
-.src-handoff { background:rgba(210,153,29,.12); color:var(--yellow); }
-
-@media (max-width:1100px) {
-  #as-right { width:280px; min-width:280px; }
-  #sidebar { width:260px; min-width:260px; }
+@media (max-width:1200px) {
+  #scheduler-panel { width: 280px; min-width: 280px; }
+  #sidebar { width: 260px; min-width: 260px; }
 }
 </style>
 </head>
@@ -155,13 +144,12 @@ select { cursor:pointer; }
 
   <div class="form-group">
     <label>Planner</label>
-    <select id="cfg-planner" onchange="onPlannerChange()">
-      <option value="graph" selected>Graph — 多 Planner 协同调度</option>
+    <select id="cfg-planner">
+      <option value="crescendo" selected>Crescendo — 渐进式多轮</option>
       <option value="pair">PAIR — 迭代对抗优化</option>
       <option value="tap">TAP — 树搜索 + 剪枝</option>
-      <option value="crescendo">Crescendo — 渐进式多轮</option>
-      <option value="sema">SEMA — 单智能体反思</option>
       <option value="safe2harm">Safe2Harm — 语义同构攻击</option>
+      <option value="scheduler">Scheduler — 综合调度 (多 Planner 轮转)</option>
     </select>
   </div>
   <div class="form-group">
@@ -170,14 +158,14 @@ select { cursor:pointer; }
   </div>
   <div class="form-group">
     <label>Threshold</label>
-    <input id="cfg-threshold" type="number" value="0.5" min="0" max="1" step="0.1">
+    <input id="cfg-threshold" type="number" value="0.7" min="0" max="1" step="0.1">
   </div>
 
   <h2>Models</h2>
   <div class="form-group">
     <label>Attack Model</label>
     <div class="form-row">
-      <input id="cfg-attack-model" value="deepseek-chat" placeholder="model name">
+      <input id="cfg-attack-model" value="deepseek-v4-flash" placeholder="model name">
       <select id="cfg-attack-preset" onchange="onAttackPreset(this.value)" style="width:80px;">
         <option value="deepseek">DeepSeek</option>
         <option value="ollama">Ollama</option>
@@ -200,8 +188,8 @@ select { cursor:pointer; }
   </div>
   <div class="form-group"><label>Victim API URL</label><input id="cfg-victim-url" value="http://127.0.0.1:11434/v1" placeholder="http://127.0.0.1:11434/v1"></div>
   <div class="form-group"><label>Victim API Key</label><input id="cfg-victim-key" type="password" value="ollama" placeholder="ollama"></div>
-  <div class="form-group"><label>Judge Model</label><input id="cfg-judge-model" value="llama3.1:latest" placeholder="llama3.1:latest"></div>
-  <div class="form-group"><label>Judge API URL</label><input id="cfg-judge-url" value="http://127.0.0.1:11434/v1" placeholder="http://127.0.0.1:11434/v1"></div>
+  <div class="form-group"><label>Judge Model</label><input id="cfg-judge-model" value="deepseek-v4-pro" placeholder="deepseek-v4-pro"></div>
+  <div class="form-group"><label>Judge API URL</label><input id="cfg-judge-url" value="https://api.deepseek.com" placeholder="https://api.deepseek.com"></div>
   <div class="form-group"><label>Judge API Key</label><input id="cfg-judge-key" type="password" value="ollama" placeholder="ollama"></div>
 
   <div class="form-row">
@@ -230,13 +218,14 @@ select { cursor:pointer; }
   </div>
 </div>
 
-<!-- ═══ Right Panel: AttackState ═══ -->
-<div id="as-right">
-  <div class="as-header">
-    <span class="as-title">&#9883; Attack State</span>
-    <span class="as-stage-badge" id="as-stage">—</span>
+<!-- ═══ Right Panel: Scheduler State ═══ -->
+<div id="scheduler-panel">
+  <div class="sp-header">
+    <span class="sp-title">&#9883; Scheduler State</span>
   </div>
-  <div id="as-body"></div>
+  <div id="sp-body" class="sp-body">
+    <div class="sp-empty">Waiting for attack...</div>
+  </div>
 </div>
 
 <script>
@@ -250,7 +239,7 @@ function onAttackPreset(v) {
     document.getElementById("cfg-attack-url").value = OLLAMA_URL;
     document.getElementById("cfg-attack-key").value = "ollama";
   } else if (v === "deepseek") {
-    document.getElementById("cfg-attack-model").value = "deepseek-chat";
+    document.getElementById("cfg-attack-model").value = "deepseek-v4-flash";
     document.getElementById("cfg-attack-url").value = DEEPSEEK_URL;
     document.getElementById("cfg-attack-key").value = "sk-xxx";
   } else {
@@ -259,18 +248,6 @@ function onAttackPreset(v) {
     document.getElementById("cfg-attack-key").value = "";
   }
 }
-function onPlannerChange() {
-  const v = document.getElementById("cfg-planner").value;
-  const asPanel = document.getElementById("as-right");
-  if (v === "graph") {
-    asPanel.style.display = "";
-  } else {
-    asPanel.style.display = "none";
-  }
-}
-// 初始状态: Graph 被选中，显示 AttackState
-document.addEventListener("DOMContentLoaded", () => { onPlannerChange(); });
-
 function onVictimPreset(v) {
   if (v === "ollama") {
     document.getElementById("cfg-victim-model").value = "llama3.1:latest";
@@ -315,24 +292,12 @@ async function startAttack() {
   const hasScale = cfg.scale && cfg.scale !== "0";
   if (!cfg.goal && !cfg.compare && !hasScale) { alert("Please enter a goal, set Scale, or enable Compare Mode."); return; }
   if (eventSource) { eventSource.close(); eventSource = null; }
-  rounds = []; finalResult = null; compareResults = null; logEntries.length = 0; sessionId = null; _lastEventId = 0;
+  rounds = []; finalResult = null; compareResults = null; logEntries.length = 0; sessionId = null; _lastEventId = 0; _handoffAccum = [];
 
   document.getElementById("btn-start").disabled = true;
   document.getElementById("btn-stop").disabled = false;
   document.getElementById("status-dot").className = "dot running";
   document.getElementById("status-text").textContent = "Starting...";
-  // 只有 Graph 模式才显示 AttackState 面板
-  if (cfg.planner === "graph") {
-    document.getElementById("as-right").classList.add("visible");
-    document.getElementById("as-right").style.display = "";
-    document.getElementById("as-stage").textContent = "waiting";
-    document.getElementById("as-stage").className = "stage-unknown";
-    document.getElementById("as-body").innerHTML =
-      '<div class="as-field"><span class="as-fname" style="color:var(--text-dim);">等待首轮数据...</span></div>';
-  } else {
-    document.getElementById("as-right").classList.remove("visible");
-    document.getElementById("as-right").style.display = "none";
-  }
   document.getElementById("content").innerHTML =
     '<div class="empty"><div class="icon">&#9203;</div><div>Attack started, waiting for results...</div></div>';
 
@@ -381,14 +346,9 @@ function handleEvent(event, data) {
       document.getElementById("status-text").textContent = data.msg;
       if (data.type === "error") addLog(data.msg, "error");
       else if (data.type === "warn") addLog(data.msg, "warn");
-      else if (data.type === "progress") {
-        // 新 goal 开始 → 清空上一 goal 的轮次 + 重置 AttackState
+      else       if (data.type === "progress") {
         rounds = []; finalResult = null;
         renderProgress(data);
-        document.getElementById("as-stage").textContent = "waiting";
-        document.getElementById("as-stage").className = "stage-unknown";
-        document.getElementById("as-body").innerHTML =
-          '<div class="as-field"><span class="as-fname" style="color:var(--text-dim);">等待首轮数据...</span></div>';
       }
       break;
     case "round":
@@ -397,7 +357,7 @@ function handleEvent(event, data) {
       if (!rounds.some(r => `${r.round || 0}_${r.planner || ""}_${(r.score || 0).toFixed(2)}` === dupKey)) {
         rounds.push(data);
       }
-      renderRounds(); renderAttackState(data.attack_state || null);
+      renderRounds();
       break;
     case "result":
       finalResult = data;
@@ -406,6 +366,7 @@ function handleEvent(event, data) {
       renderRounds();
       break;
     case "compare_done": compareResults = data.results; renderCompare(); break;
+    case "scheduler": renderSchedulerState(data); break;
     case "batch_done":
       document.getElementById("status-text").textContent = `Batch done. ASR: ${data.asr.toFixed(1)}% (${data.wins}/${data.total})`;
       renderBatchResult(data);
@@ -448,7 +409,7 @@ function renderProgress(data) {
 function renderRounds() {
   _ensureContentLayout();
   const container = document.getElementById("rounds-container");
-  const plannerColors = { crescendo:"tag-crescendo", pair:"tag-pair", tap:"tag-tap", sema:"tag-sema", icrt:"tag-icrt", safe2harm:"tag-pair", graph:"tag-graph" };
+  const plannerColors = { crescendo:"tag-crescendo", pair:"tag-pair", tap:"tag-tap", safe2harm:"tag-pair", scheduler:"tag-scheduler" };
   let html = "";
   if (finalResult) {
     const cls = finalResult.success ? "result-success" : "result-fail";
@@ -500,88 +461,70 @@ function renderBatchResult(data) {
   el.innerHTML = html + `</tbody></table>`;
 }
 
-// ═══ AttackState Right Panel ═══
+// ═══ Scheduler State Right Panel ═══
+let _handoffAccum = [];  // accumulate handoff summaries across rounds
 
-// ── 字段定义: name, key, 中文名, 格式, 更新者 ──
-function renderAttackState(as) {
-  const panel = document.getElementById("as-right");
-  panel.classList.add("visible");
-
-  if (!as) {
-    document.getElementById("as-stage").textContent = "N/A";
-    document.getElementById("as-stage").className = "stage-unknown";
-    document.getElementById("as-body").innerHTML =
-      '<div class="as-field"><span class="as-fname" style="color:var(--text-dim);">等待数据...</span></div>';
-    return;
-  }
-
-  // Posture badge
-  const posture = as.victim_posture || "unknown";
-  const postureLabels = {hard_block:"HARD BLOCK",soft_evasion:"SOFT EVASION",playing_role:"PLAYING ROLE",yielding:"YIELDING"};
-  const stageEl = document.getElementById("as-stage");
-  stageEl.textContent = postureLabels[posture] || posture;
-  stageEl.className = `as-stage-badge stage-${posture}`;
-
+function renderSchedulerState(data) {
+  const body = document.getElementById("sp-body");
+  const pct = data.max_rounds ? Math.min(data.round / data.max_rounds * 100, 100) : 0;
+  const scoreCls = data.best_score >= 0.7 ? "score-high" : data.best_score >= 0.3 ? "score-mid" : "";
   let html = "";
 
-  // ── 核心信号 (4 fields) ──
-  html += `<div class="as-module"><div class="as-module-title as-mod-attack">&#9679; 核心信号 (Blackboard)</div>`;
-  html += kvRow("max_progress", "突破分数", fmtNum(as.max_progress), "当前最高 Judge 分");
-  html += kvRow("total_tokens", "累计交互量", fmtNum(as.total_tokens) + " chars", "odometer (非实际上下文)");
-  html += kvRow("minefields", "雷区词汇", fmtList(as.minefields) || "(空)", "共 " + (as.minefields||[]).length + " 个");
-  html += kvRow("victim_posture", "受害者姿态", postureLabels[posture] || posture, "");
-  html += `</div>`;
-
-  // ── 内部统计 ──
-  html += `<div class="as-module"><div class="as-module-title as-mod-handoff">&#9679; Scheduler 内部</div>`;
-  html += kvRow("tried_planners", "已上场", fmtList(as.tried_planners) || "(无)", "");
-  html += kvRow("planner_switch_count", "切换次数", fmtNum(as.planner_switch_count), "上次: " + (as.handoff_reason || "N/A"));
-  html += kvRow("last_planner", "上一任", as.last_planner || "(无)", "");
-  html += `</div>`;
-
-  document.getElementById("as-body").innerHTML = html;
-}
-
-function kvRow(key, label, value, note) {
-  if (!value && value !== 0) return "";
-  const noteHtml = note ? `<span style="font-size:10px;color:var(--text-dim);margin-left:auto;">${note}</span>` : "";
-  return `<div class="as-field"><span class="as-fname">${label}</span><span class="as-fval">${value}</span>${noteHtml}</div>`;
-}
-function fmtNum(v) { return (v !== undefined && v !== null) ? (typeof v === "number" ? v.toFixed(2) : v) : "—"; }
-function fmtList(arr) { return (arr && arr.length) ? arr.slice(0,5).join(", ") + (arr.length>5?"...":"") : ""; }
-
-function renderField(f, as) {
-  let val = as[f.k];
-  if (val === undefined || val === null || val === "") return "";
-  // Special: failure_strength is 0-1 float now
-  if (f.k === "failure_strength" && f.fmt === "pct") {
-    val = typeof val === "number" ? val : ({"low":0.3,"medium":0.6,"high":0.9}[val] || 0.5);
-  }
-
-  // Format
-  let display;
-  if (f.fmt === "pct") {
-    display = (val * 100).toFixed(0) + "%";
-  } else if (f.fmt === "num") {
-    display = typeof val === "number" ? val.toFixed(2) : val;
-  } else if (f.fmt === "list") {
-    if (Array.isArray(val) && val.length) {
-      display = val.join(", ");
-    } else {
-      return ""; // empty list → hide
+  // Accumulate handoff summaries
+  if (data.handoff_summary) {
+    // deduplicate by content
+    if (!_handoffAccum.some(h => h.text === data.handoff_summary)) {
+      _handoffAccum.push({
+        text: data.handoff_summary,
+        planner: data.planner,
+        round: data.round,
+      });
     }
-  } else {
-    display = String(val);
-    if (display.length > 60) display = display.substring(0, 57) + "...";
   }
 
-  const srcClass = "src-" + f.src;
+  html += `<div class="sp-module">`;
+  html += `<div class="sp-module-title">&#9679; Runtime</div>`;
+  html += `<div class="sp-row"><span class="sp-label">Planner</span><span class="sp-value sp-tag tag-${data.planner}">${data.planner}</span></div>`;
+  html += `<div class="sp-row"><span class="sp-label">Round</span><span class="sp-value">${data.round} / ${data.max_rounds}</span></div>`;
+  html += `<div class="sp-row"><span class="sp-label">Best Score</span><span class="sp-value ${scoreCls}">${data.best_score.toFixed(2)}</span></div>`;
+  html += `<div class="sp-row"><span class="sp-label">Status</span><span class="sp-value" style="color:${data.status==='HANDOFF'?'var(--yellow)':'var(--text-dim)'};">${data.status}</span></div>`;
+  html += `<div class="progress-bar"><div class="fill" style="width:${pct}%;"></div></div>`;
+  html += `</div>`;
 
-  return `<div class="as-field">
-    <span class="as-fname" title="${f.note}">${f.zh}</span>
-    <span class="as-fval">${escapeHtml(display)}</span>
-    <span class="as-fsrc ${srcClass}">${SRC_LABELS[f.src]}</span>
-  </div>`;
+  // Tier & Used planners (scheduler mode only)
+  if (data.tier || (data.used_planners && data.used_planners.length)) {
+    html += `<div class="sp-module">`;
+    html += `<div class="sp-module-title">&#9679; Orchestration</div>`;
+    if (data.tier) {
+      const tierCls = data.tier === "extreme" ? "score-high" : data.tier === "hard" ? "score-mid" : "";
+      html += `<div class="sp-row"><span class="sp-label">Tier</span><span class="sp-value ${tierCls}">${data.tier.toUpperCase()}</span></div>`;
+    }
+    if (data.used_planners && data.used_planners.length) {
+      const tags = data.used_planners.map(p => `<span class="planner-tag tag-${p}" style="margin-right:4px;">${p}</span>`).join("");
+      html += `<div class="sp-row" style="flex-wrap:wrap;"><span class="sp-label">Used</span><span class="sp-value">${tags}</span></div>`;
+    }
+    if (data.switches && data.switches.length) {
+      const swList = data.switches.map(s =>
+        `<div style="font-size:11px;padding:2px 0;">R${s.round}: ${s.from} &#8594; ${s.to}</div>`).join("");
+      html += `<div class="sp-row" style="flex-direction:column;align-items:stretch;gap:2px;"><span class="sp-label">Switches</span><div>${swList}</div></div>`;
+    }
+    html += `</div>`;
+  }
+
+  // All accumulated handoff summaries
+  if (_handoffAccum.length) {
+    html += `<div class="sp-module">`;
+    html += `<div class="sp-module-title sp-mod-handoff">&#8658; Handoff Summaries (${_handoffAccum.length})</div>`;
+    for (const h of _handoffAccum) {
+      html += `<div style="margin-bottom:8px;">`;
+      html += `<div style="font-size:10px;color:var(--text-dim);margin-bottom:2px;">At R${h.round} — <span class="planner-tag tag-${h.planner}">${h.planner}</span></div>`;
+      html += `<div class="sp-handoff-text">${escapeHtml(h.text)}</div>`;
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+
+  body.innerHTML = html;
 }
 
 function escapeHtml(s) {
