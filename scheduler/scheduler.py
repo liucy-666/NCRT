@@ -106,6 +106,18 @@ class StrategyManager:
                 state["last_handoff_summary"] = result.summary or ""
                 first_cycle_done = True
 
+            # ── 停滞检测：连续 3 轮无进展 → 提前交棒，把预算留给 Change Pool ──
+            if first_cycle_done and hasattr(planner, 'is_stuck') and planner.is_stuck():
+                print(f"\n  [STUCK {name}] ", end="", flush=True)
+                if not state["last_handoff_summary"] and hasattr(planner, '_build_handoff'):
+                    try:
+                        state["last_handoff_summary"] = planner._build_handoff(goal) or ""
+                    except Exception:
+                        pass
+                state["handoff_reason"] = "local_optimum_stuck"
+                self._do_handoff(state, name, result, is_error_handoff=False)
+                return False   # 提前切换
+
             # ── 继续 ──
             self._emit_continue(state, name, result)
 
@@ -213,7 +225,7 @@ class StrategyManager:
 
             done = self._run_change_planner(goal, name, state)
             if done:
-                break
+                return self._build_result(state, goal)
 
         if not change_pool and state["round_num"] < self.config.max_llm_calls:
             print(f"\n  [ALL EXHAUSTED] ", end="", flush=True)
