@@ -135,6 +135,7 @@ def _run_baseline_single(session_id: str, goal: str, method_name: str,
         "planner": method_name,
         "turns": paired_turns,
         "metadata": result.metadata,
+        "Planner Abstract": result.metadata.get("handoff_abstracts", []),
     }
     _export_data.setdefault(session_id, []).append(entry)
     _write_goal_result(uid, goal, method_name, entry)
@@ -215,6 +216,7 @@ def _run_single_attack(session_id: str, goal: str, planner_name: str,
         "planner": planner_name,
         "turns": authoritative_turns if authoritative_turns else export_turns,
         "metadata": result.metadata,
+        "Planner Abstract": result.metadata.get("handoff_abstracts", []),
     }
     _export_data.setdefault(session_id, []).append(entry)
     _write_goal_result(uid, goal, planner_name, entry)

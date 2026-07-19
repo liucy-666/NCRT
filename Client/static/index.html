@@ -292,7 +292,7 @@ async function startAttack() {
   const hasScale = cfg.scale && cfg.scale !== "0";
   if (!cfg.goal && !cfg.compare && !hasScale) { alert("Please enter a goal, set Scale, or enable Compare Mode."); return; }
   if (eventSource) { eventSource.close(); eventSource = null; }
-  rounds = []; finalResult = null; compareResults = null; logEntries.length = 0; sessionId = null; _lastEventId = 0; _handoffAccum = [];
+  rounds = []; finalResult = null; compareResults = null; logEntries.length = 0; sessionId = null; _lastEventId = 0; _handoffAccum = []; _lastSchedulerPlanner = "";
 
   document.getElementById("btn-start").disabled = true;
   document.getElementById("btn-stop").disabled = false;
@@ -462,9 +462,16 @@ function renderBatchResult(data) {
 }
 
 // ═══ Scheduler State Right Panel ═══
-let _handoffAccum = [];  // accumulate handoff summaries across rounds
+let _handoffAccum = [];
+let _lastSchedulerPlanner = "";
 
 function renderSchedulerState(data) {
+  // Planner 切换时清空累积状态
+  if (data.planner !== _lastSchedulerPlanner) {
+    _handoffAccum = [];
+    _lastSchedulerPlanner = data.planner;
+  }
+
   const body = document.getElementById("sp-body");
   const pct = data.max_rounds ? Math.min(data.round / data.max_rounds * 100, 100) : 0;
   const scoreCls = data.best_score >= 0.7 ? "score-high" : data.best_score >= 0.3 ? "score-mid" : "";

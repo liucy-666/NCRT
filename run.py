@@ -76,7 +76,7 @@ def run_one(planner_name: str, goal: str, category: str = "",
     from scheduler import StrategyManager, SchedulerConfig
 
     if planner_name == "scheduler":
-        roster = SchedulerConfig.planner_roster
+        roster = SchedulerConfig().planner_roster
     else:
         roster = [planner_name]
 
@@ -108,6 +108,7 @@ def run_one(planner_name: str, goal: str, category: str = "",
         "final_response": (result.final_response or "")[:300],
         "elapsed": elapsed,
         "metadata": result.metadata,
+        "Planner Abstract": result.metadata.get("handoff_abstracts", []),
     }
 
     output_dir = args.output if args.output else OUTPUT_DIR
