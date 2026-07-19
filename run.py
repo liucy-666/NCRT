@@ -75,15 +75,17 @@ def run_one(planner_name: str, goal: str, category: str = "",
             config_overrides: dict = None) -> Dict:
     from scheduler import StrategyManager, SchedulerConfig
 
-    if planner_name == "scheduler":
-        roster = SchedulerConfig().planner_roster
-    else:
+    is_single = planner_name != "scheduler"
+    if is_single:
         roster = [planner_name]
+    else:
+        roster = SchedulerConfig().planner_roster
 
     sc = SchedulerConfig(
         max_llm_calls=args.rounds,
         success_threshold=args.threshold,
         planner_roster=roster,
+        first_planner_rounds=args.rounds if is_single else 10,
     )
     gen = Generator(model=args.attack_model, victim_model=args.victim_model,
                     attack_base_url=args.attack_base_url,

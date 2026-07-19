@@ -63,9 +63,11 @@ class StrategyManager:
     #  Phase 1: Main Planner — 固定 10 轮
     # ═══════════════════════════════════════════════════════════════
 
-    def _run_main_planner(self, goal: str, name: str, state: dict) -> bool:
+    def _run_main_planner(self, goal: str, name: str, state: dict,
+                          has_next: bool = True) -> bool:
         """运行主 Planner，固定 first_planner_rounds 轮。
 
+        has_next=False 时（单 Planner 模式）跳过 handoff 生成。
         返回 True 表示攻击已结束（成功或异常），False 表示正常切换。
         """
         planner = self._build(name, enable_backtrack=True)
@@ -107,14 +109,15 @@ class StrategyManager:
             # ── 继续 ──
             self._emit_continue(state, name, result)
 
-        # 跑满 first_planner_rounds 轮，生成摘要后强制切换
-        if not state["last_handoff_summary"] and hasattr(planner, '_build_handoff'):
-            try:
-                state["last_handoff_summary"] = planner._build_handoff(goal) or ""
-            except Exception:
-                pass
-        state["handoff_reason"] = "target_rounds_reached"
-        self._do_handoff(state, name, result, is_error_handoff=False)
+        # 跑满 first_planner_rounds 轮，只有后续还有 Planner 才生成 handoff
+        if has_next:
+            if not state["last_handoff_summary"] and hasattr(planner, '_build_handoff'):
+                try:
+                    state["last_handoff_summary"] = planner._build_handoff(goal) or ""
+                except Exception:
+                    pass
+            state["handoff_reason"] = "target_rounds_reached"
+            self._do_handoff(state, name, result, is_error_handoff=False)
         return False
 
     # ═══════════════════════════════════════════════════════════════
@@ -197,7 +200,8 @@ class StrategyManager:
         }
 
         # ── Phase 1: Main Planner ──
-        done = self._run_main_planner(goal, main_planner, state)
+        done = self._run_main_planner(goal, main_planner, state,
+                                      has_next=bool(change_pool))
         if done:
             return self._build_result(state, goal)
 

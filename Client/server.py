@@ -96,13 +96,15 @@ def _run_single_attack(session_id: str, goal: str, planner_name: str,
     scheduler  → roster 全量 4 个，Main Planner 10 轮 + Change Pool 最小生命周期。
     """
     # 统一走 StrategyManager
-    roster = [planner_name] if planner_name != "scheduler" else None
+    is_single = planner_name != "scheduler"
+    roster = [planner_name] if is_single else None
     sc = SchedulerConfig(
         max_llm_calls=config.max_rounds,
         success_threshold=config.success_threshold,
     )
-    if roster:
+    if is_single:
         sc.planner_roster = roster
+        sc.first_planner_rounds = config.max_rounds  # 单 Planner 吃满全部轮数
 
     export_turns = []
 
