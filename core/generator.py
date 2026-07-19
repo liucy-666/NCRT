@@ -50,6 +50,16 @@ class Generator:
         """自动检测是否使用 DeepSeek API."""
         return "deepseek" in self.attack_base_url.lower()
 
+    @staticmethod
+    def _strip_thinking(text: str) -> str:
+        """清理 DeepSeek 思考模式的 <thinking> 标签和  response 标记."""
+        import re
+        # 移除 <thinking>...</thinking> 块
+        text = re.sub(r"<thinking>.*?</thinking>", "", text, flags=re.DOTALL)
+        # 移除  response 前缀标记
+        text = re.sub(r"^\s*response\s*", "", text, flags=re.MULTILINE)
+        return text.strip()
+
     # ═══════════════════════════════════════════════════════════════
     #  generate / call_victim — 对外接口
     # ═══════════════════════════════════════════════════════════════
@@ -76,6 +86,11 @@ class Generator:
         result = self._call(prompt, system, temperature, max_tokens,
                            prefix=prefix, json_mode=json_mode,
                            reasoning_effort=reasoning_effort)
+
+        # 清洗 DeepSeek 思考模式残留的 <thinking> 标签或 <｜end▁of▁thinking｜> 标记
+        if result and not result.startswith("[ERROR") and not result.startswith("[WARN"):
+            result = self._strip_thinking(result)
+
         if result and len(result) > 5 and not result.startswith("[ERROR"):
             if not bypass_cache and not prefix and not json_mode:
                 self._cache[key] = result
@@ -201,8 +216,11 @@ class Generator:
                         content = msg.get("content", "")
                     if content:
                         return content
+                    # DeepSeek 思考模式：当 content 为空时，用 reasoning_content 兜底
                     if not ollama_mode and msg.get("reasoning_content"):
-                        return "[ERROR: only reasoning_content returned, no final content]"
+                        fallback = msg.get("reasoning_content", "")
+                        if fallback:
+                            return fallback
                     return "[WARN: empty content]"
 
                 # ── 状态码分类 ──

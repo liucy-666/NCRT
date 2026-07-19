@@ -78,75 +78,6 @@ def _write_goal_result(uid: str, goal: str, planner_name: str, entry: dict):
     print(f"  [SAVED] {filename}", flush=True)
 
 
-def _run_baseline_single(session_id: str, goal: str, method_name: str,
-                         generator, judge, config, emit,
-                         uid: str = "") -> dict:
-    """Baseline 方法独立运行，不经过 Graph Scheduler。"""
-    baseline_cls = BASELINE_METHODS[method_name]
-    baseline = baseline_cls(generator=generator, judge=judge, config=config)
-
-    _best_score = 0.0
-    _handoff_summary = ""
-
-    def on_round(rnum, pname, prompt, resp, score, reason, **kwargs):
-        nonlocal _best_score, _handoff_summary
-        if _active_sessions.get(session_id, {}).get("stop"):
-            raise _StopAttack()
-        is_internal = kwargs.get("is_internal", False)
-        _best_score = max(_best_score, score)
-        _handoff_summary = kwargs.get("summary", _handoff_summary) or _handoff_summary
-        handoff_status = kwargs.get("status", "CONTINUE")
-        if not is_internal:
-            emit("round", {
-                "round": rnum, "planner": pname,
-                "prompt": prompt[:200], "response": resp[:200],
-                "score": score, "reason": reason[:200],
-            })
-        emit("scheduler", {
-            "planner": pname,
-            "round": rnum,
-            "max_rounds": config.max_rounds,
-            "best_score": _best_score,
-            "status": handoff_status,
-            "handoff_summary": _handoff_summary,
-        })
-
-    result = baseline.run(goal, emit_fn=on_round,
-                          stop_check=lambda: _active_sessions.get(session_id, {}).get("stop", False))
-
-    # 配对 attacker/victim turns
-    raw_turns = result.turns
-    paired_turns = []
-    for i, t in enumerate(raw_turns):
-        if t.role == "attacker":
-            victim_resp = raw_turns[i+1].content if i+1 < len(raw_turns) else ""
-            paired_turns.append({
-                "round": t.round_num,
-                "planner": t.metadata.get("planner", "") if t.metadata else "",
-                "prompt": t.content,
-                "response": victim_resp,
-                "score": t.score,
-                "reason": (t.judge_reason or "")[:200],
-            })
-    entry = {
-        "uid": uid, "goal": goal,
-        "success": result.success,
-        "best_score": result.best_score,
-        "planner": method_name,
-        "turns": paired_turns,
-        "metadata": result.metadata,
-        "Planner Abstract": result.metadata.get("handoff_abstracts", []),
-    }
-    _export_data.setdefault(session_id, []).append(entry)
-    _write_goal_result(uid, goal, method_name, entry)
-    emit("result", _result_to_dict(result, method_name, goal))
-    return {
-        "uid": uid, "goal": goal[:100],
-        "success": result.success,
-        "best_score": result.best_score,
-        "rounds": result.total_rounds,
-    }
-
 
 def _count_completed() -> int:
     """统计 output 目录下已有的 JSON 文件数，用于断点续传."""
@@ -160,17 +91,19 @@ def _count_completed() -> int:
 def _run_single_attack(session_id: str, goal: str, planner_name: str,
                        config, generator, judge, emit,
                        uid: str = "") -> dict:
-    """统一攻击入口: baseline 方法走独立循环，scheduler 走 StrategyManager。"""
-    # baseline 方法: 独立运行，不经过 StrategyManager
-    if planner_name in BASELINE_METHODS:
-        return _run_baseline_single(session_id, goal, planner_name,
-                                    generator, judge, config, emit, uid)
-
-    # scheduler 模式: 使用 StrategyManager 调度全部 4 个 Planner
+    """统一攻击入口：所有 Planner（含 baseline）均走 StrategyManager。
+    单 Planner → roster=[planner_name]，Main Planner 享受 10 轮 + continue_step。
+    scheduler  → roster 全量 4 个，Main Planner 10 轮 + Change Pool 最小生命周期。
+    """
+    # 统一走 StrategyManager
+    roster = [planner_name] if planner_name != "scheduler" else None
     sc = SchedulerConfig(
         max_llm_calls=config.max_rounds,
         success_threshold=config.success_threshold,
     )
+    if roster:
+        sc.planner_roster = roster
+
     export_turns = []
 
     def on_round(rnum, pname, prompt, resp, score, reason, scheduler_state=None):

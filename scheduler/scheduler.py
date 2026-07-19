@@ -8,7 +8,7 @@ StrategyManager — Sequential Portfolio Scheduler (v10)
   3. 全部 Planner 用尽 / 成功 / 全局 max_llm_calls 超限 → 结束
 """
 import random
-from typing import Optional, List, Dict
+from typing import Optional, List
 from dataclasses import dataclass, field
 
 from core.types import AttackResult, Outcome, ConversationTurn, StepResult
@@ -40,7 +40,8 @@ class StrategyManager:
         self.on_round = on_round
         random.seed(self.config.seed)
 
-    def _build(self, name: str, handoff_summary: str = ""):
+    def _build(self, name: str, handoff_summary: str = "",
+               enable_backtrack: bool = False):
         from baseline.methods.crescendo import CrescendoBaseline
         from baseline.methods.pair import PAIRBaseline
         from baseline.methods.tap import TAPBaseline
@@ -55,7 +56,8 @@ class StrategyManager:
         if cls is None:
             raise ValueError(f"Unknown planner: {name}")
         return cls(generator=self.generator, judge=self.judge,
-                   handoff_summary=handoff_summary)
+                   handoff_summary=handoff_summary,
+                   enable_backtrack=enable_backtrack)
 
     # ═══════════════════════════════════════════════════════════════
     #  Phase 1: Main Planner — 固定 10 轮
@@ -66,7 +68,7 @@ class StrategyManager:
 
         返回 True 表示攻击已结束（成功或异常），False 表示正常切换。
         """
-        planner = self._build(name)
+        planner = self._build(name, enable_backtrack=True)
         first_cycle_done = False              # stage 周期是否已完成
 
         for _ in range(self.config.first_planner_rounds):
@@ -124,7 +126,8 @@ class StrategyManager:
 
         返回 True 表示攻击已结束，False 表示继续。
         """
-        planner = self._build(name, handoff_summary=state["last_handoff_summary"])
+        planner = self._build(name, handoff_summary=state["last_handoff_summary"],
+                             enable_backtrack=False)
         state["planner_round"] = 0
 
         while not planner.finished:
@@ -212,7 +215,7 @@ class StrategyManager:
             print(f"\n  [ALL EXHAUSTED] ", end="", flush=True)
 
         return self._build_result(state, goal, success=False,
-                                  reason="budget_exhausted")
+                                reason="budget_exhausted")
 
     # ═══════════════════════════════════════════════════════════════
     #  辅助方法
