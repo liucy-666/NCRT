@@ -95,7 +95,25 @@ def run_one(planner_name: str, goal: str, category: str = "",
     judge = Judge(model=args.judge_model, base_url=args.judge_base_url,
                   api_key=args.judge_key)
 
-    scheduler = StrategyManager(config=sc, generator=gen, judge=judge)
+    def on_round(rnum, pname, prompt, resp, score, reason, scheduler_state=None):
+        """每轮回调：输出详细日志，类似 server.py 的 SSE 推送."""
+        if prompt or resp:
+            print(f"\n─── Round {rnum} ({pname}) ───")
+            if prompt:
+                print(f"  PROMPT: {prompt[:300]}{'...' if len(prompt) > 300 else ''}")
+            if resp:
+                print(f"  RESPONSE: {resp[:300]}{'...' if len(resp) > 300 else ''}")
+            print(f"  SCORE: {score:.2f} | {reason[:200]}")
+        if scheduler_state:
+            st = scheduler_state.get("status", "")
+            if st == "HANDOFF":
+                print(f"  >> HANDOFF: {pname} → next (reason: {scheduler_state.get('switch_reason', '')})")
+            elif st == "SUCCESS":
+                print(f"  >> SUCCESS! {pname} at round {rnum}")
+        sys.stdout.flush()
+
+    scheduler = StrategyManager(config=sc, generator=gen, judge=judge,
+                                on_round=on_round)
     t0 = time.time()
     result = scheduler.attack(goal)
     elapsed = time.time() - t0

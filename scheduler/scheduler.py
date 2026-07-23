@@ -87,8 +87,9 @@ class StrategyManager:
                 state["handoff_reason"] = "planner_error"
                 result = StepResult(prompt="", response="", score=0.0,
                                     reason=f"planner_error: {e}", status="HANDOFF")
-                self._do_handoff(state, name, result, is_error_handoff=True)
-                return False  # 切换到下一个 Planner
+                if has_next:
+                    self._do_handoff(state, name, result, is_error_handoff=True)
+                return False
 
             state["round_num"] += 1
             state["planner_round"] += 1

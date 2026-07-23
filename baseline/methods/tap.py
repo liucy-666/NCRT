@@ -101,15 +101,13 @@ class TAPBaseline:
         self._evaluated.append((prompt, score, reason, response))
         self._history.append((prompt, response, score, reason, self._state, strategy))
 
-        # ── beam_width 个候选全部评估完 → 剪枝 + 深度推进 → 准备返回 ──
+        # ── beam_width 个候选全部评估完 → 剪枝 + 深度推进 ──
         if len(self._evaluated) >= self.beam_width:
-            # 按实际分数排序，保留 beam_width 个幸存者
-            self._evaluated.sort(key=lambda x: -x[1])  # x[1] = score
-            # 下一个 branch 将基于最佳幸存者
+            self._evaluated.sort(key=lambda x: -x[1])
+            # 只保留 top beam_width 幸存者，丢弃其余（防止累积膨胀）
+            self._evaluated = self._evaluated[:self.beam_width]
             self._state += 1
             self._branch_generated = False
-
-            # 清除多余的候选（已评估的保留在 _evaluated，未评估的丢弃）
             self._candidate_pool = []
 
             if self.finished:
@@ -206,12 +204,12 @@ class TAPBaseline:
 
     def _build_handoff(self, goal: str) -> str:
         attempts_lines = []
-        for i, (p, r, s, rs, depth, st) in enumerate(self._evaluated):
+        for i, (p, r, s, rs, depth, st) in enumerate(self._history):
             attempts_lines.append(
                 f"Round {i+1} [depth={depth} {st}]: score={s:.2f}\n"
                 f"  Prompt: {p[:200]}\n  Victim: {r[:200]}\n  Judge: {rs[:100]}")
         attempts = "\n".join(attempts_lines)
-        best = max((s for _, s, _, _ in self._evaluated), default=0.0)
+        best = max((s for _, _, s, _, _, _ in self._history), default=0.0)
         return self.gen.generate(
             f"GOAL: {goal}\nMETHOD: TAP (true beam search, victim-pruned)\n\n"
             f"Attempts:\n{attempts}\n\nBest score: {best:.2f}\n\n"
@@ -244,9 +242,10 @@ class TAPBaseline:
         self._evaluated.append((prompt, score, reason, response))
         self._history.append((prompt, response, score, reason, self._state, strategy))
 
-        # beam_width 评估完 → 剪枝
+        # beam_width 评估完 → 剪枝，只保留 top survivors
         if len(self._evaluated) >= self.beam_width:
             self._evaluated.sort(key=lambda x: -x[1])
+            self._evaluated = self._evaluated[:self.beam_width]
             self._candidate_pool = []
             self._branch_generated = False
 
