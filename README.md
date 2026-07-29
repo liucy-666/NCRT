@@ -173,6 +173,28 @@ python run.py --compare --scale 10 --rounds 20
 
 ## Web 与桌面端
 
+### NCRT 统一命令
+
+在项目根目录执行 `NCRT.bat`（或将该目录加入 `PATH` 后直接执行 `NCRT`）。首次使用前，复制并修改根目录的 `config.json`；同一份示例也保存在 `ncrt/config.example.json`。三个模型角色分别支持模型名、OpenAI 兼容 API 地址和密钥环境变量，避免把真实密钥写入配置文件。
+
+```powershell
+# 显示介绍与帮助
+.\NCRT.bat
+.\NCRT.bat -help
+.\NCRT.bat -v
+
+# 读取 config.json 并执行评估；完整对话 JSON 与运行日志写入 output/
+.\NCRT.bat -run
+
+# 仅显示动态进度条，详细控制台日志仍写入 output/
+.\NCRT.bat -run -nolog
+
+# 启动与 Client/launcher.py 相同的桌面界面
+.\NCRT.bat -run -client
+```
+
+可通过 `--config <PATH>` 使用另一份配置，例如 `.\NCRT.bat -run --config .\my-config.json`。`api_key_env` 指向的环境变量优先于配置项中的 `api_key`。
+
 ```powershell
 # 启动 Flask 服务
 python Client/server.py

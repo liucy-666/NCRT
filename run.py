@@ -129,6 +129,19 @@ def run_one(planner_name: str, goal: str, category: str = "",
         "elapsed": elapsed,
         "metadata": result.metadata,
         "Planner Abstract": result.metadata.get("handoff_abstracts", []),
+        # Keep the complete conversation in the JSON artifact even when the
+        # console log is hidden through the NCRT launcher.
+        "turns": [
+            {
+                "round": turn.round_num,
+                "role": turn.role,
+                "content": turn.content,
+                "score": turn.score,
+                "judge_reason": turn.judge_reason,
+                "metadata": turn.metadata,
+            }
+            for turn in result.turns
+        ],
     }
 
     output_dir = args.output if args.output else OUTPUT_DIR
