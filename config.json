@@ -1,24 +1,24 @@
 {
   "attacker": {
-    "model": "your-attacker-model",
-    "base_url": "https://attacker.example.com/v1",
-    "api_key_env": "NCRT_ATTACKER_API_KEY"
+    "model": "ATTACK MODEL",
+    "base_url": "ATTACK URL",
+    "api_key_env": "ATTACK KEY"
   },
   "victim": {
-    "model": "your-authorized-target-model",
-    "base_url": "https://victim.example.com/v1",
-    "api_key_env": "NCRT_VICTIM_API_KEY"
+    "model": "VICTIM MODEL",
+    "base_url": "VICTIM URL",
+    "api_key_env": "VICTIM KEY"
   },
   "judge": {
-    "model": "your-judge-model",
-    "base_url": "https://judge.example.com/v1",
-    "api_key_env": "NCRT_JUDGE_API_KEY"
+    "model": "JUDGE MODEL",
+    "base_url": "JUDGE URL",
+    "api_key_env": "JUDGE KEY"
   },
   "run": {
     "planner": "scheduler",
     "scale": 10,
     "rounds": 20,
-    "threshold": 0.7,
+    "threshold": 0.9,
     "seed": 42,
     "workers": 1,
     "output": "output"

@@ -183,10 +183,10 @@ python run.py --compare --scale 10 --rounds 20
 .\NCRT.bat -help
 .\NCRT.bat -v
 
-# 读取 config.json 并执行评估；完整对话 JSON 与运行日志写入 output/
+# 读取 config.json 并执行评估；每个完整对话分别写入 output/*.json
 .\NCRT.bat -run
 
-# 仅显示动态进度条，详细控制台日志仍写入 output/
+# 仅显示动态进度条；完整对话仍分别写入 output/*.json
 .\NCRT.bat -run -nolog
 
 # 启动与 Client/launcher.py 相同的桌面界面

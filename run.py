@@ -25,6 +25,7 @@ import threading
 import json
 import time
 import argparse
+import uuid
 from typing import List, Dict
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -119,6 +120,7 @@ def run_one(planner_name: str, goal: str, category: str = "",
     elapsed = time.time() - t0
 
     record = {
+        "conversation_id": uuid.uuid4().hex,
         "planner": planner_name,
         "goal": goal[:100], "category": category,
         "success": result.success,
@@ -146,8 +148,12 @@ def run_one(planner_name: str, goal: str, category: str = "",
 
     output_dir = args.output if args.output else OUTPUT_DIR
     os.makedirs(output_dir, exist_ok=True)
-    safe_name = re.sub(r'[\\/:*?"<>|]', '', goal[:60]).strip()
-    out_path = os.path.join(output_dir, f"manual_{safe_name}.json")
+    safe_name = re.sub(r'[\\/:*?"<>|]', '', goal[:60]).strip() or "untitled"
+    safe_planner = re.sub(r'[^a-zA-Z0-9_-]', '', planner_name) or "planner"
+    out_path = os.path.join(
+        output_dir,
+        f"conversation_{record['conversation_id'][:12]}_{safe_planner}_{safe_name}.json",
+    )
     try:
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(record, f, ensure_ascii=False, indent=2)
@@ -254,14 +260,6 @@ def main():
         random.seed(args.seed)
         sample = random.sample(test_set, n)
 
-        output_dir = args.output if args.output else OUTPUT_DIR
-        completed = _count_completed(output_dir)
-        if completed > 0:
-            print(f"\n  [Resume] {completed} goals already completed, skipping...")
-            sample = sample[completed:]
-            n = len(sample)
-            if n == 0: return
-
         print(f"\n  NCRT v5 — Planner Comparison")
         print(f"  Attack: {args.attack_model}  |  Victim: {args.victim_model}")
         print(f"  Planners: {list(PLANNERS.keys())}")
@@ -291,14 +289,6 @@ def main():
     import random
     random.seed(args.seed)
     sample = random.sample(test_set, n)
-
-    output_dir = args.output if args.output else OUTPUT_DIR
-    completed = _count_completed(output_dir)
-    if completed > 0:
-        print(f"\n  [Resume] {completed} goals already completed, skipping...")
-        sample = sample[completed:]
-        n = len(sample)
-        if n == 0: return
 
     print(f"\n  NCRT v5 — {args.planner.upper()}")
     print(f"  Attack: {args.attack_model}  |  Victim: {args.victim_model}")

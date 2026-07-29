@@ -181,6 +181,7 @@ class Judge:
                 api_key=self.api_key or "ollama",
                 backend="api",
                 proxy=self._proxy,
+                client_role="judge",
             )
         return self._generator
 

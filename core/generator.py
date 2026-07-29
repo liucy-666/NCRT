@@ -14,6 +14,7 @@ import os
 import time
 import re as _re
 from typing import Optional
+from urllib.parse import urlsplit, urlunsplit
 
 
 class Generator:
@@ -29,7 +30,8 @@ class Generator:
                  victim_base_url: str = "",
                  victim_api_key: str = "",
                  max_retries: int = 3,
-                 proxy: str = ""):
+                 proxy: str = "",
+                 client_role: str = "attacker"):
         self.model = model
         self.victim_model = victim_model
         self.base_url = base_url
@@ -40,6 +42,7 @@ class Generator:
         self.victim_base_url = victim_base_url or base_url
         self.victim_api_key = victim_api_key or api_key
         self.max_retries = max_retries
+        self.client_role = client_role
         self._cache: dict = {}
         self._cache_hits = 0
         self._victim_calls = 0
@@ -103,7 +106,8 @@ class Generator:
         return self._call_model(self.victim_model, prompt, system="",
                                 temperature=temperature, max_tokens=max_tokens,
                                 base_url=self.victim_base_url,
-                                api_key=self.victim_api_key)
+                                api_key=self.victim_api_key,
+                                role="victim")
 
     # ═══════════════════════════════════════════════════════════════
     #  内部调用链
@@ -116,13 +120,23 @@ class Generator:
                                 base_url=self.attack_base_url,
                                 api_key=self.attack_api_key,
                                 prefix=prefix, json_mode=json_mode,
-                                reasoning_effort=reasoning_effort)
+                                reasoning_effort=reasoning_effort,
+                                role=self.client_role)
+
+    @staticmethod
+    def _display_url(url: str) -> str:
+        """Show an endpoint identity without query strings or credentials."""
+        parsed = urlsplit(url)
+        host = parsed.hostname or ""
+        if parsed.port:
+            host = f"{host}:{parsed.port}"
+        return urlunsplit((parsed.scheme, host, parsed.path, "", "")).rstrip("/")
 
     def _call_model(self, model: str, prompt: str, system: str,
                     temperature: float, max_tokens: int,
                     base_url: str = "", api_key: str = "",
                     prefix: str = "", json_mode: bool = False,
-                    reasoning_effort: str = "") -> str:
+                    reasoning_effort: str = "", role: str = "attacker") -> str:
         import requests, json
 
         url = base_url or self.base_url or "http://127.0.0.1:11434/v1"
@@ -254,7 +268,8 @@ class Generator:
             if attempt < self.max_retries - 1:
                 delay = 2 ** attempt
                 _time.sleep(delay)
-                print(f"  [RETRY] {last_error}, attempt {attempt+2}/{self.max_retries} "
+                print(f"  [RETRY] {role} model={model} endpoint={self._display_url(url)} "
+                      f"{last_error}, attempt {attempt+2}/{self.max_retries} "
                       f"(after {delay}s)", flush=True)
 
         return f"[ERROR: {last_error} after {self.max_retries} retries]"

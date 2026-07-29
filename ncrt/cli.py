@@ -6,10 +6,10 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import threading
-import time
 from typing import Any
 
 from . import __version__
@@ -99,15 +99,28 @@ def load_config(path_text: str) -> dict[str, Any]:
     return config
 
 
-def _credential(role: dict[str, Any]) -> str:
+def _credential(role: dict[str, Any], role_name: str) -> str:
     env_name = role.get("api_key_env", "")
     if env_name:
         if not isinstance(env_name, str):
             raise ValueError("api_key_env must be a string.")
-        return os.environ.get(env_name, "")
+        # Temporary compatibility: API keys commonly contain '-' and therefore
+        # cannot be valid environment-variable names. Prefer `api_key` for this.
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", env_name):
+            return env_name
+        value = os.environ.get(env_name, "")
+        if value:
+            return value
     value = role.get("api_key", "")
     if not isinstance(value, str):
         raise ValueError("api_key must be a string.")
+    if value:
+        return value
+    if env_name:
+        raise ValueError(
+            f"{role_name}.api_key_env is configured, but the environment variable "
+            "is not available to this NCRT process."
+        )
     return value
 
 
@@ -137,23 +150,22 @@ def command_from_config(config: dict[str, Any]) -> list[str]:
     if run.get("compare", False):
         command.append("--compare")
 
-    for section, prefix in ((attacker, "attack"), (victim, "victim"), (judge, "judge")):
+    for section, prefix, role_name in (
+        (attacker, "attack", "attacker"),
+        (victim, "victim", "victim"),
+        (judge, "judge", "judge"),
+    ):
         model = section.get("model", "")
         base_url = section.get("base_url", "")
         if model:
             command.extend((f"--{prefix}-model", str(model)))
         if base_url:
             command.extend((f"--{prefix}-base-url", str(base_url)))
-        key = _credential(section)
+        key = _credential(section, role_name)
         key_flag = "--judge-key" if prefix == "judge" else f"--{prefix}-api-key"
         if key:
             command.extend((key_flag, key))
     return command
-
-
-def _write_log_line(log_file, line: str) -> None:
-    log_file.write(line)
-    log_file.flush()
 
 
 def _print_runner_line(line: str) -> None:
@@ -168,10 +180,7 @@ def _print_runner_line(line: str) -> None:
 
 
 def run_with_progress(command: list[str], quiet: bool) -> int:
-    output_dir = PROJECT_DIR / "output"
-    output_dir.mkdir(exist_ok=True)
-    log_path = output_dir / f"ncrt_{time.strftime('%Y%m%d_%H%M%S')}.log"
-    print(f"\nDetailed execution log: {log_path}")
+    print("\nEach completed conversation is saved as an individual JSON file in output/.")
 
     process = subprocess.Popen(
         command,
@@ -185,31 +194,29 @@ def run_with_progress(command: list[str], quiet: bool) -> int:
     )
     assert process.stdout is not None
 
-    with log_path.open("w", encoding="utf-8") as log_file:
-        if not quiet:
-            for line in process.stdout:
-                _write_log_line(log_file, line)
-                _print_runner_line(line)
-        else:
-            # The legacy runner does not expose total work for every mode, so show
-            # an indeterminate progress bar while preserving every line in output/.
-            stop = threading.Event()
+    if not quiet:
+        for line in process.stdout:
+            _print_runner_line(line)
+    else:
+        # The legacy runner does not expose total work for every mode, so show
+        # an indeterminate progress bar while conversation JSON files are written.
+        stop = threading.Event()
 
-            def animate() -> None:
-                frames = ("[=       ]", "[==      ]", "[===     ]", "[ ====   ]", "[  ===== ]", "[   =====]", "[    ====]", "[     ===]", "[      ==]", "[       =]")
-                index = 0
-                while not stop.is_set():
-                    print(f"\r  Running evaluation {frames[index % len(frames)]}", end="", flush=True)
-                    index += 1
-                    time.sleep(0.15)
+        def animate() -> None:
+            frames = ("[=       ]", "[==      ]", "[===     ]", "[ ====   ]", "[  ===== ]", "[   =====]", "[    ====]", "[     ===]", "[      ==]", "[       =]")
+            index = 0
+            while not stop.is_set():
+                print(f"\r  Running evaluation {frames[index % len(frames)]}", end="", flush=True)
+                index += 1
+                stop.wait(0.15)
 
-            worker = threading.Thread(target=animate, daemon=True)
-            worker.start()
-            for line in process.stdout:
-                _write_log_line(log_file, line)
-            stop.set()
-            worker.join(timeout=1)
-            print("\r  Running evaluation [complete]", flush=True)
+        worker = threading.Thread(target=animate, daemon=True)
+        worker.start()
+        for _ in process.stdout:
+            pass
+        stop.set()
+        worker.join(timeout=1)
+        print("\r  Running evaluation [complete]", flush=True)
 
     return process.wait()
 
